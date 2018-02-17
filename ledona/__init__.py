@@ -1,6 +1,8 @@
 import sys
 import time
 
+from . import sqlalchemy
+
 
 def process_timer(timed_func):
     """

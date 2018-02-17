@@ -137,17 +137,18 @@ class SQLAlchemyWrapper(object):
             session.close()
 
 
-def get_db_obj(path_to_db_file=None, verbose=False):
-    return _SQLAlchemyWrapper(path_to_db_file, verbose=verbose)
+def get_db_obj(path_to_db_file=None, verbose=False, sqlalchemy_wrapper=SQLAlchemyWrapper):
+    return sqlalchemy_wrapper(path_to_db_file, verbose=verbose)
 
 
-def create_empty_db(filename=None, verbose=False):
+def create_empty_db(sqlalchemy_orm_base, filename=None, verbose=False,
+                    sqlalchemy_wrapper=SQLAlchemyWrapper):
     """
     create the fantasy db at filename
 
     filename - if None then create an in-memory DB (used for testing)
     returns the db_obj reference to the database
     """
-    db_obj = get_db_obj(filename, verbose)
-    SQLAlchemyORMBase.metadata.create_all(db_obj.engine)
+    db_obj = get_db_obj(filename, verbose, sqlalchemy_wrapper=sqlalchemy_wrapper)
+    sqlalchemy_orm_base.metadata.create_all(db_obj.engine)
     return db_obj
