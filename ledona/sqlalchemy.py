@@ -44,7 +44,7 @@ class SQLAlchemyWrapper(object):
     is available at the db_manager property. This is not available for new DBs until the
     DB is populated by a db manager
 
-    To create a new DB:
+    To create a new DB use create_empty_obj or:
 
     from sqlalchemy.ext.declarative import declarative_base
     from sqlalchemy import String
@@ -57,7 +57,7 @@ class SQLAlchemyWrapper(object):
     db_obj = SQLAlchemyWrapper("filename.db")
     SQLAlchemyORMBase.metadata.create_all(db_obj.engine)
 
-    To open an existing DB:
+    To open an existing DB use get_db_obj or:
 
     db_obj = SQLAlchemyWrapper("filename.db")
     """
