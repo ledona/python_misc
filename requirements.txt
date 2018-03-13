@@ -1,0 +1,2 @@
+# needed for performance result storage
+google-api-python-client
