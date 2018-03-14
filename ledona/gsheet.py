@@ -12,8 +12,8 @@ from oauth2client import tools
 from oauth2client.file import Storage
 
 
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly',
-                         'https://www.googleapis.com/auth/drive.metadata.readonly']
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets',
+          'https://www.googleapis.com/auth/drive.metadata.readonly']
 
 
 class GSheetManager(object):
@@ -21,7 +21,7 @@ class GSheetManager(object):
     Some limited functionality to support writing to google sheets
     """
 
-    def __init__(self, application_name, client_secret_file, args,
+    def __init__(self, application_name, client_secret_file, args=None,
                  scopes=SCOPES, verbose=False, credential_path=None,
                  reset_creds=False):
         """
@@ -60,29 +60,72 @@ class GSheetManager(object):
                 print('Storing credentials to ' + credential_path)
         self._credentials = credentials
 
-    def find_sheets(self, name_starts_with=None, max_to_return=100, next_page_token=None):
+    def find(self, name_contains=None, max_to_return=100, next_page_token=None, mime_type=None,
+             fields=None, parent_id=None, order_by=None):
+        """
+        path: list of folder names
+        """
+        query = []
+        if parent_id is not None:
+            query.append("'{}' in parents".format(parent_id))
+        if mime_type is not None:
+            query.append("mimeType = '{}'".format(mime_type))
+        if name_contains is not None:
+            query.append("name contains '{}'".format(name_contains))
+
+        http = self._credentials.authorize(httplib2.Http())
+        service = discovery.build('drive', 'v3', http=http)
+
+        return service.files().list(
+            q=" and ".join(query),
+            corpora="user",
+            pageSize=max_to_return,
+            orderBy=order_by,
+            pageToken=next_page_token,
+            fields=fields).execute()
+
+    def find_sheets(self, order_by_name=False, **kwargs):
         """
         Find sheets in google drive. Returns a dict with keys
         files - list of tuples of (name, id)
         complete - True if there are no other results
         next_page_token - token to use to get more results
         """
-
-        query = ["mimeType = 'application/vnd.google-apps.spreadsheet'"]
-        if name_starts_with is not None:
-            query.append("name contains '{}'".format(name_starts_with))
-        http = self._credentials.authorize(httplib2.Http())
-        service = discovery.build('drive', 'v3', http=http)
-        results = service.files().list(
-            q=" ".join(query),
-            corpora="user",
-            pageSize=max_to_return,
-            pageToken=next_page_token,
-            fields="nextPageToken, incompleteSearch, files(id, name)").execute()
+        results = self.find(mime_type='application/vnd.google-apps.spreadsheet',
+                            fields="nextPageToken, incompleteSearch, files(id, name)",
+                            order_by='name' if order_by_name else None,
+                            **kwargs)
 
         return {'files': [(_f['name'], _f['id']) for _f in results['files']],
                 'complete': not results['incompleteSearch'],
                 'next_page_token': results.get('nextPageToken')}
+
+    def find_folders(self, order_by_name=False, **kwargs):
+        """
+        Find folders in google drive. Returns a dict with keys
+        folders - list of tuples of (name, id)
+        complete - True if there are no other results
+        next_page_token - token to use to get more results
+        """
+        results = self.find(mime_type='application/vnd.google-apps.folder',
+                            fields="nextPageToken, incompleteSearch, files(id, name)",
+                            order_by='name' if order_by_name else None,
+                            **kwargs)
+
+        return {'folders': [(_f['name'], _f['id']) for _f in results['files']],
+                'complete': not results['incompleteSearch'],
+                'next_page_token': results.get('nextPageToken')}
+
+    def create_sheet(self, title):
+        new_sheet = {
+            'properties': {"title": title}
+        }
+
+        service = discovery.build('sheets', 'v4', credentials=self._credentials)
+
+        request = service.spreadsheets().create(body=new_sheet)
+        response = request.execute()
+        return response
 
     def test_sheets_access(self):
         """
@@ -141,10 +184,6 @@ def _run_test(manager, args):
     return("Success, all looks good")
 
 
-def _list_sheets(manager, args):
-    return manager.find_sheets(name_starts_with=args.sheet_name)
-
-
 if __name__ == '__main__':
     import pprint
     import argparse
@@ -159,15 +198,36 @@ if __name__ == '__main__':
     subparsers = parser.add_subparsers(title="cmd")
 
     # Test command
-    subparser_test = subparsers.add_parser(
+    subparser = subparsers.add_parser(
         "test", description="Test to ensure credentials and access works")
-    subparser_test.set_defaults(func=_run_test)
+    subparser.set_defaults(func=_run_test)
 
     # list sheets
-    subparser_list = subparsers.add_parser(
-        "list", description="list sheets")
-    subparser_list.set_defaults(func=_list_sheets)
-    subparser_list.add_argument('sheet_name', nargs='?', help="Name starts with")
+    subparser = subparsers.add_parser(
+        "sheets", description="list sheets")
+    subparser.add_argument('sheet_name', nargs='?', help="Sheet name contains ...")
+    subparser.add_argument('--order_by_name', default=False, action="store_true")
+    subparser.add_argument('--parent_id', help="the parent folder id")
+    subparser.set_defaults(
+        func=(lambda manager, args:
+              manager.find_sheets(parent_id=args.parent_id, name_contains=args.sheet_name,
+                                  order_by_name=args.order_by_name)))
+
+    # list folders
+    subparser = subparsers.add_parser(
+        "folders", description="list folders")
+    subparser.add_argument('parent_id', default="root", nargs='?', help="ID of the parent folder")
+    subparser.add_argument('--order_by_name', default=False, action="store_true")
+    subparser.set_defaults(
+        func=(lambda manager, args:
+              manager.find_folders(parent_id=args.parent_id, order_by_name=args.order_by_name)))
+
+    subparser = subparsers.add_parser(
+        "create", description="create sheet")
+    subparser.add_argument('sheet_name', help="Name of new sheet")
+    subparser.set_defaults(
+        func=(lambda manager, args:
+              manager.create_sheet(args.sheet_name)))
 
     args = parser.parse_args()
     manager = GSheetManager(args.app_name, args.secret_file, args,
