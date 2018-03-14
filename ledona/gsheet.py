@@ -13,13 +13,14 @@ from oauth2client.file import Storage
 
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets',
-          'https://www.googleapis.com/auth/drive.metadata.readonly']
+          'https://www.googleapis.com/auth/drive']
 
 
 class GSheetManager(object):
     """
     Some limited functionality to support writing to google sheets
     """
+    _FIELDS = "nextPageToken, incompleteSearch, files(id, name)"
 
     def __init__(self, application_name, client_secret_file, args=None,
                  scopes=SCOPES, verbose=False, credential_path=None,
@@ -60,6 +61,13 @@ class GSheetManager(object):
                 print('Storing credentials to ' + credential_path)
         self._credentials = credentials
 
+    def get_drive_service(self):
+        http = self._credentials.authorize(httplib2.Http())
+        return discovery.build('drive', 'v3', http=http)
+
+    def get_sheets_service(self):
+        return discovery.build('sheets', 'v4', credentials=self._credentials)
+
     def find(self, name_contains=None, max_to_return=100, next_page_token=None, mime_type=None,
              fields=None, parent_id=None, order_by=None):
         """
@@ -73,8 +81,7 @@ class GSheetManager(object):
         if name_contains is not None:
             query.append("name contains '{}'".format(name_contains))
 
-        http = self._credentials.authorize(httplib2.Http())
-        service = discovery.build('drive', 'v3', http=http)
+        service = self.get_drive_service()
 
         return service.files().list(
             q=" and ".join(query),
@@ -92,7 +99,7 @@ class GSheetManager(object):
         next_page_token - token to use to get more results
         """
         results = self.find(mime_type='application/vnd.google-apps.spreadsheet',
-                            fields="nextPageToken, incompleteSearch, files(id, name)",
+                            fields=self._FIELDS,
                             order_by='name' if order_by_name else None,
                             **kwargs)
 
@@ -116,15 +123,30 @@ class GSheetManager(object):
                 'complete': not results['incompleteSearch'],
                 'next_page_token': results.get('nextPageToken')}
 
-    def create_sheet(self, title):
+    def _move_file(self, file_id, folder_id):
+        service = self.get_drive_service()
+
+        # Retrieve the existing parents to remove
+        _file = service.files().get(fileId=file_id,
+                                    fields='parents').execute()
+        previous_parents = ",".join(_file.get('parents'))
+        # Move the file to the new folder
+        return service.files().update(fileId=file_id,
+                                      addParents=folder_id,
+                                      removeParents=previous_parents,
+                                      fields='id, parents').execute()
+
+    def create_sheet(self, title, parent_id=None):
         new_sheet = {
             'properties': {"title": title}
         }
 
-        service = discovery.build('sheets', 'v4', credentials=self._credentials)
+        service = self.get_sheets_service()
 
         request = service.spreadsheets().create(body=new_sheet)
         response = request.execute()
+        if parent_id is not None:
+            response = self._move_file(response['spreadsheetId'], parent_id)
         return response
 
     def test_sheets_access(self):
@@ -192,7 +214,7 @@ if __name__ == '__main__':
     parser.add_argument('--reset_creds', default=False, action="store_true",
                         help="Reset all previously granted credentials")
     parser.add_argument('--verbose', default=False, action="store_true")
-    parser.add_argument('secret_file',
+    parser.add_argument('--secret_file',
                         help="Project credentials file. Instructions on creation found at https://developers.google.com/sheets/api/quickstart/python")
 
     subparsers = parser.add_subparsers(title="cmd")
@@ -225,9 +247,10 @@ if __name__ == '__main__':
     subparser = subparsers.add_parser(
         "create", description="create sheet")
     subparser.add_argument('sheet_name', help="Name of new sheet")
+    subparser.add_argument('--parent_id', help="the folder id to save the sheet to")
     subparser.set_defaults(
         func=(lambda manager, args:
-              manager.create_sheet(args.sheet_name)))
+              manager.create_sheet(args.sheet_name, parent_id=args.parent_id)))
 
     args = parser.parse_args()
     manager = GSheetManager(args.app_name, args.secret_file, args,
