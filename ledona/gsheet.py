@@ -60,6 +60,7 @@ class GSheetManager(object):
                 print('Storing credentials to ' + credential_path)
         self._credentials = credentials
 
+<<<<<<< HEAD
     def find(self, name_contains=None, max_to_return=100, next_page_token=None, mime_type=None,
              fields=None, parent_id=None, order_by=None):
         """
@@ -126,6 +127,12 @@ class GSheetManager(object):
         request = service.spreadsheets().create(body=new_sheet)
         response = request.execute()
         return response
+=======
+    def find_sheets(self, query):
+        http = self._credentials.authorize(httplib2.Http())
+        service = discovery.build('drive', 'v3', http=http)
+        raise NotImplementedError()
+>>>>>>> 45564331256c1c726b66f48b3a0397c0c39df631
 
     def test_sheets_access(self):
         """
@@ -181,11 +188,22 @@ def _run_test(manager, args):
         raise
     if args.verbose:
         print("\n")
+<<<<<<< HEAD
     return("Success, all looks good")
 
 
 if __name__ == '__main__':
     import pprint
+=======
+    print("Success, all looks good")
+
+
+def _find_sheets(manager, args):
+    raise NotImplementedError()
+
+
+if __name__ == '__main__':
+>>>>>>> 45564331256c1c726b66f48b3a0397c0c39df631
     import argparse
     parser = argparse.ArgumentParser(parents=[tools.argparser])
     parser.add_argument('--app_name', default="TEST", help="default = TEST")
@@ -235,5 +253,4 @@ if __name__ == '__main__':
 
     if not hasattr(args, 'func'):
         parser.error("choose a command to execute")
-
     pprint.pprint(args.func(manager, args))
