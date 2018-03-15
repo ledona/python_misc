@@ -2,9 +2,9 @@
 read and write to google sheets
 """
 
-from __future__ import print_function
 import httplib2
 import os
+import argparse
 
 from apiclient import discovery
 from oauth2client import client
@@ -12,7 +12,7 @@ from oauth2client import tools
 from oauth2client.file import Storage
 
 
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets',
+_SCOPES = ['https://www.googleapis.com/auth/spreadsheets',
           'https://www.googleapis.com/auth/drive']
 
 
@@ -22,9 +22,7 @@ class GSheetManager(object):
     """
     _FIELDS = "nextPageToken, incompleteSearch, files(id, name)"
 
-    def __init__(self, application_name, client_secret_file, args=None,
-                 scopes=SCOPES, verbose=False, credential_path=None,
-                 reset_creds=False):
+    def __init__(self, args, credential_path=None):
         """
         Based on python quickstart documentation at
         https://developers.google.com/sheets/api/quickstart/python
@@ -40,24 +38,23 @@ class GSheetManager(object):
         Returns:
             Credentials, the obtained credential.
         """
-        self.verbose = verbose
+        self.verbose = args.verbose
 
         if credential_path is None:
             home_dir = os.path.expanduser('~')
             credential_dir = os.path.join(home_dir, '.credentials')
             if not os.path.exists(credential_dir):
                 os.makedirs(credential_dir)
-            credential_path = os.path.join(credential_dir,
-                                           'sheets.googleapis.com-python-quickstart.json')
+            credential_path = os.path.join(credential_dir, 'googleapis.com-python.json')
 
         store = Storage(credential_path)
         credentials = store.get()
-        if reset_creds or not credentials or credentials.invalid:
-            flow = client.flow_from_clientsecrets(client_secret_file, scopes)
-            flow.user_agent = application_name
+        if args.reset_creds or not credentials or credentials.invalid:
+            flow = client.flow_from_clientsecrets(args.secret_file, _SCOPES)
+            flow.user_agent = args.app_name
             credentials = tools.run_flow(flow, store, args)
 
-            if verbose:
+            if self.verbose:
                 print('Storing credentials to ' + credential_path)
         self._credentials = credentials
 
@@ -68,11 +65,14 @@ class GSheetManager(object):
     def get_sheets_service(self):
         return discovery.build('sheets', 'v4', credentials=self._credentials)
 
-    def _find(self, name_contains=None, max_to_return=100, next_page_token=None, mime_type=None,
-              fields=None, parent_id=None, order_by=None):
+    def _find(self, name_contains=None, name_is=None, max_to_return=100, next_page_token=None,
+              mime_type=None, fields=None, parent_id=None, order_by=None):
         """
         path: list of folder names
         """
+        if name_contains is not None and name_is is not None:
+            raise ValueError("name_contains and name_is cannot bot be not None")
+
         query = []
         if parent_id is not None:
             query.append("'{}' in parents".format(parent_id))
@@ -80,6 +80,8 @@ class GSheetManager(object):
             query.append("mimeType = '{}'".format(mime_type))
         if name_contains is not None:
             query.append("name contains '{}'".format(name_contains))
+        elif name_is is not None:
+            query.append("name = '{}'".format(name_is))
 
         service = self.get_drive_service()
 
@@ -217,10 +219,12 @@ def _run_test(manager, args):
     return("Success, all looks good")
 
 
+BASE_ARGPARSER = argparse.ArgumentParser(parents=[tools.argparser])
+
+
 if __name__ == '__main__':
     import pprint
-    import argparse
-    parser = argparse.ArgumentParser(parents=[tools.argparser])
+    parser = argparse.ArgumentParser(parents=[BASE_ARGPARSER])
     parser.add_argument('--app_name', default="TEST", help="default = TEST")
     parser.add_argument('--reset_creds', default=False, action="store_true",
                         help="Reset all previously granted credentials")
@@ -272,8 +276,7 @@ if __name__ == '__main__':
               manager.create_sheet(args.sheet_name, parent_id=args.parent_id)))
 
     args = parser.parse_args()
-    manager = GSheetManager(args.app_name, args.secret_file, args,
-                            verbose=args.verbose, reset_creds=args.reset_creds)
+    manager = GSheetManager(args)
 
     if not hasattr(args, 'func'):
         parser.error("choose a command to execute")
