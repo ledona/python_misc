@@ -68,8 +68,8 @@ class GSheetManager(object):
     def get_sheets_service(self):
         return discovery.build('sheets', 'v4', credentials=self._credentials)
 
-    def find(self, name_contains=None, max_to_return=100, next_page_token=None, mime_type=None,
-             fields=None, parent_id=None, order_by=None):
+    def _find(self, name_contains=None, max_to_return=100, next_page_token=None, mime_type=None,
+              fields=None, parent_id=None, order_by=None):
         """
         path: list of folder names
         """
@@ -98,10 +98,10 @@ class GSheetManager(object):
         complete - True if there are no other results
         next_page_token - token to use to get more results
         """
-        results = self.find(mime_type='application/vnd.google-apps.spreadsheet',
-                            fields=self._FIELDS,
-                            order_by='name' if order_by_name else None,
-                            **kwargs)
+        results = self._find(mime_type='application/vnd.google-apps.spreadsheet',
+                             fields=self._FIELDS,
+                             order_by='name' if order_by_name else None,
+                             **kwargs)
 
         return {'files': [(_f['name'], _f['id']) for _f in results['files']],
                 'complete': not results['incompleteSearch'],
@@ -114,10 +114,10 @@ class GSheetManager(object):
         complete - True if there are no other results
         next_page_token - token to use to get more results
         """
-        results = self.find(mime_type='application/vnd.google-apps.folder',
-                            fields="nextPageToken, incompleteSearch, files(id, name)",
-                            order_by='name' if order_by_name else None,
-                            **kwargs)
+        results = self._find(mime_type='application/vnd.google-apps.folder',
+                             fields="nextPageToken, incompleteSearch, files(id, name)",
+                             order_by='name' if order_by_name else None,
+                             **kwargs)
 
         return {'folders': [(_f['name'], _f['id']) for _f in results['files']],
                 'complete': not results['incompleteSearch'],
@@ -135,6 +135,17 @@ class GSheetManager(object):
                                       addParents=folder_id,
                                       removeParents=previous_parents,
                                       fields='id, parents').execute()
+
+    def find_path(self, path):
+        """
+        return the id of the last folder in the path
+
+        path: list of folder names
+
+        raises: FileNotFoundError is the path does not exist
+        """
+        # if verbose print search results for steps on the path
+        raise NotImplementedError()
 
     def create_sheet(self, title, parent_id=None):
         new_sheet = {
@@ -243,6 +254,14 @@ if __name__ == '__main__':
     subparser.set_defaults(
         func=(lambda manager, args:
               manager.find_folders(parent_id=args.parent_id, order_by_name=args.order_by_name)))
+
+    # find path
+    subparser = subparsers.add_parser(
+        "path", description="find path")
+    subparser.add_argument('path', help="Path to find. Folder names should be seperated by '/'")
+    subparser.set_defaults(
+        func=(lambda manager, args:
+              manager.find_path(args.path.split("/"))))
 
     subparser = subparsers.add_parser(
         "create", description="create sheet")
