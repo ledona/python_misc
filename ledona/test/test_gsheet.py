@@ -44,6 +44,48 @@ _MOVE_RESPONSE = json.dumps(
      "parents": ["0BxSHVIWmmaymNmZjWGFqZnBBY28"]}
 )
 
+_FIND_RESPONSE_DICT = {
+    'files': [{'id': '1WjIrRBsfUMrwThsnWJFxnVEvssQp2aUDYAqx1vsLIt8',
+               'kind': 'drive#file',
+               'mimeType': 'application/vnd.google-apps.spreadsheet',
+               'name': 'Fantasy Scoring Tests'},
+              {'id': '1i7mfK5zNEXAlp943ccpVIPESKH9R3EYC',
+               'kind': 'drive#file',
+               'mimeType': 'application/vnd.google-apps.folder',
+               'name': 'TEST'},
+              {'id': '1G8BmlcBLBowUY5LOPCgIqL_u2J8Rw32QKPU6pUonHtQ',
+               'kind': 'drive#file',
+               'mimeType': 'application/vnd.google-apps.spreadsheet',
+               'name': 'Knapsack Testing'},
+              {'id': '1yUdMEAWEA8m3WqCdGX9ZNjxUacIw-6Y_Wt56QL7Ek3A',
+               'kind': 'drive#file',
+               'mimeType': 'application/vnd.google-apps.spreadsheet',
+               'name': 'fantasy 2016-8 test'}],
+    'incompleteSearch': False,
+    'kind': 'drive#fileList'}
+
+_FIND_RESPONSE = json.dumps(_FIND_RESPONSE_DICT)
+
+_PATH_RESPONSES = [
+    {'files': [{'id': '1',
+                'kind': 'drive#file',
+                'mimeType': 'application/vnd.google-apps.folder',
+                'name': 't1'}],
+     'incompleteSearch': False,
+     'kind': 'drive#fileList'},
+    {'files': [{'id': '2',
+                'kind': 'drive#file',
+                'mimeType': 'application/vnd.google-apps.folder',
+                'name': 't2'}],
+     'incompleteSearch': False,
+     'kind': 'drive#fileList'},
+    {'files': [{'id': '3',
+                'kind': 'drive#file',
+                'mimeType': 'application/vnd.google-apps.spreadsheet',
+                'name': 'sheet'}],
+     'incompleteSearch': False,
+     'kind': 'drive#fileList'}
+]
 
 _SERVICE_VERSIONS = {'sheets': 'v4',
                      'drive': 'v3'}
@@ -80,11 +122,34 @@ class TestGSheet(unittest.TestCase):
             sheet_id = gsheet.create_sheet(title)
         self.assertEqual(_id, sheet_id)
 
-    def test_find_sheets(self):
-        raise NotImplementedError()
+    def test_find(self):
+        http = HttpMockSequence([
+            ({'status': '200'}, self._drive_discovery),
+            ({'status': '200'}, _FIND_RESPONSE)])
+        gsheet = GSheetManager()
+        with patch.object(gsheet, 'get_drive_service', create_service_mock('drive', http)):
+            self.assertEqual(_FIND_RESPONSE_DICT, gsheet.find(name_contains='test'))
 
-    def test_find_folders(self):
-        raise NotImplementedError()
+    @patch.object(GSheetManager, 'find')
+    def test_find_path(self, mock_find):
+        def find_side_effect(name_is=None, mime_type_contains=None, parent_id=None, **kwargs):
+            self.assertIn(name_is, ('t1', 't2', 'sheet'))
 
-    def test_find_path(self):
-        raise NotImplementedError()
+            if name_is == 't1':
+                self.assertEqual('root', parent_id)
+                self.assertEqual('folder', mime_type_contains)
+                return _PATH_RESPONSES[0]
+            elif name_is == 't2':
+                self.assertEqual('1', parent_id)
+                self.assertEqual('folder', mime_type_contains)
+                return _PATH_RESPONSES[1]
+            else:
+                # name_is == 'sheet'
+                self.assertEqual('2', parent_id)
+                return _PATH_RESPONSES[2]
+
+        mock_find.side_effect = find_side_effect
+        gsheet = GSheetManager()
+        search_path = ['t1', 't2', 'sheet']
+        path_ids = gsheet.find_path(search_path)
+        self.assertEqual(tuple(zip(search_path, ('1', '2', '3'))), path_ids)

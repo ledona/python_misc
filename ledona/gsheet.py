@@ -75,8 +75,8 @@ class GSheetManager(object):
     def get_sheets_service(cls, credentials):
         return cls.get_service('sheets', 'v4', credentials)
 
-    def _find(self, name_contains=None, name_is=None, max_to_return=100, next_page_token=None,
-              mime_type=None, fields=None, parent_id=None, order_by=None):
+    def find(self, name_contains=None, name_is=None, max_to_return=100, next_page_token=None,
+             mime_type_contains=None, fields=None, parent_id=None, order_by=None):
         """
         path: list of folder names
         """
@@ -86,8 +86,8 @@ class GSheetManager(object):
         query = []
         if parent_id is not None:
             query.append("'{}' in parents".format(parent_id))
-        if mime_type is not None:
-            query.append("mimeType = '{}'".format(mime_type))
+        if mime_type_contains is not None:
+            query.append("mimeType contains '{}'".format(mime_type_contains))
         if name_contains is not None:
             query.append("name contains '{}'".format(name_contains))
         elif name_is is not None:
@@ -102,38 +102,6 @@ class GSheetManager(object):
             orderBy=order_by,
             pageToken=next_page_token,
             fields=fields).execute()
-
-    def find_sheets(self, order_by_name=False, **kwargs):
-        """
-        Find sheets in google drive. Returns a dict with keys
-        files - list of tuples of (name, id)
-        complete - True if there are no other results
-        next_page_token - token to use to get more results
-        """
-        results = self._find(mime_type='application/vnd.google-apps.spreadsheet',
-                             fields=self._FIELDS,
-                             order_by='name' if order_by_name else None,
-                             **kwargs)
-
-        return {'files': [(_f['name'], _f['id']) for _f in results['files']],
-                'complete': not results['incompleteSearch'],
-                'next_page_token': results.get('nextPageToken')}
-
-    def find_folders(self, order_by_name=False, **kwargs):
-        """
-        Find folders in google drive. Returns a dict with keys
-        folders - list of tuples of (name, id)
-        complete - True if there are no other results
-        next_page_token - token to use to get more results
-        """
-        results = self._find(mime_type='application/vnd.google-apps.folder',
-                             fields="nextPageToken, incompleteSearch, files(id, name)",
-                             order_by='name' if order_by_name else None,
-                             **kwargs)
-
-        return {'folders': [(_f['name'], _f['id']) for _f in results['files']],
-                'complete': not results['incompleteSearch'],
-                'next_page_token': results.get('nextPageToken')}
 
     def _move_file(self, file_id, folder_id):
         service = self.get_drive_service(self._credentials)
@@ -150,14 +118,37 @@ class GSheetManager(object):
 
     def find_path(self, path):
         """
-        return the id of the last folder in the path
+        find the requested path starting at the root
 
         path: list of folder names
 
+        return: the list of ids for folders and the id of the final file/folder
         raises: FileNotFoundError is the path does not exist
         """
-        # if verbose print search results for steps on the path
-        raise NotImplementedError()
+        assert isinstance(path, (tuple, list))
+
+        path_ids = []
+        # id, name
+        parent = ('root', 'root')
+        for name in path[:-1]:
+            resp = self.find(name_is=name, parent_id=parent[0],
+                             mime_type_contains='folder')
+            if self.verbose:
+                print(resp)
+            if len(resp['files']) == 0:
+                raise FileNotFoundError("Could not find folder '{}' in '{}'".format(name, parent[1]))
+            path_ids.append((name, resp['files'][0]['id']))
+            parent = (path_ids[-1][1], name)
+
+        # find the last item in the path
+        resp = self.find(name_is=path[-1], parent_id=parent[0])
+        if self.verbose:
+            print(resp)
+        if len(resp['files']) == 0:
+            raise FileNotFoundError("Could not find final item '{}' in '{}'".format(path[-1], parent[1]))
+
+        path_ids.append((path[-1], resp['files'][0]['id']))
+        return tuple(path_ids)
 
     def create_sheet(self, title, parent_id=None):
         """
@@ -255,27 +246,20 @@ if __name__ == '__main__':
 
     # list sheets
     subparser = subparsers.add_parser(
-        "sheets", description="list sheets")
-    subparser.add_argument('sheet_name', nargs='?', help="Sheet name contains ...")
+        "find", description="find stuff on your drive")
+    subparser.add_argument('name', nargs='?', help="Name contains ...")
     subparser.add_argument('--order_by_name', default=False, action="store_true")
     subparser.add_argument('--parent_id', help="the parent folder id")
+    subparser.add_argument('--mime', help="mime type contains...")
     subparser.set_defaults(
         func=(lambda manager, args:
-              manager.find_sheets(parent_id=args.parent_id, name_contains=args.sheet_name,
-                                  order_by_name=args.order_by_name)))
-
-    # list folders
-    subparser = subparsers.add_parser(
-        "folders", description="list folders")
-    subparser.add_argument('parent_id', default="root", nargs='?', help="ID of the parent folder")
-    subparser.add_argument('--order_by_name', default=False, action="store_true")
-    subparser.set_defaults(
-        func=(lambda manager, args:
-              manager.find_folders(parent_id=args.parent_id, order_by_name=args.order_by_name)))
+              manager.find(parent_id=args.parent_id, name_contains=args.name,
+                           mime_type_contains=args.mime,
+                           order_by='name' if args.order_by_name else None)))
 
     # find path
     subparser = subparsers.add_parser(
-        "path", description="find path")
+        "find_path", description="find path")
     subparser.add_argument('path', help="Path to find. Folder names should be seperated by '/'")
     subparser.set_defaults(
         func=(lambda manager, args:
