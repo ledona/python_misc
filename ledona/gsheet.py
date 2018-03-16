@@ -5,6 +5,7 @@ read and write to google sheets
 import httplib2
 import os
 import argparse
+from pprint import pprint
 
 from apiclient import discovery
 from oauth2client import client
@@ -166,20 +167,26 @@ class GSheetManager(object):
             response = self._move_file(sheet_id, parent_id)
         return sheet_id
 
-    def get_sheet_data(self, sheet_id, _range, major_dim="ROWS"):
+    def get_sheet_data(self, sheet_id, _range, major_dim="ROWS", values_only=False):
+        """
+        values_only: if True just return the list of lists with values found on the sheet
+        """
         assert major_dim in ('ROWS', 'COLUMNS')
         service = self.get_sheets_service(self._credentials)
         request = service.spreadsheets().values().get(spreadsheetId=sheet_id,
                                                       range=_range,
                                                       majorDimension=major_dim)
         response = request.execute()
+        if values_only:
+            response = response.get('values', [])
         return response
 
     def update_sheet(self, sheet_id, _range, data, major_dim="ROWS", append=False, respond=False):
         assert major_dim in ('ROWS', 'COLUMNS')
         if self.verbose:
-            print("{}ing sheet '{}' range '{}' with:\n{}".format('Append' if append else 'Updat',
-                                                                 sheet_id, _range, data))
+            print("{}ing sheet '{}' range '{}' with:".format('Append' if append else 'Updat',
+                                                             sheet_id, _range))
+            pprint(data)
         body = {'range': _range,
                 'majorDimension': major_dim,
                 'values': data}
@@ -257,9 +264,11 @@ if __name__ == '__main__':
     subparser.add_argument('range', help="Sheet range in A1 notation")
     subparser.add_argument('--major_dim', choices=('ROWS', 'COLUMNS'), default='ROWS',
                            help="Major dimension to use in retrieving data. Default=ROWS")
+    subparser.add_argument('--values_only', action="store_true", default=False)
     subparser.set_defaults(
         func=(lambda manager, args:
-              manager.get_sheet_data(args.sheet_id, args.range, major_dim=args.major_dim)))
+              manager.get_sheet_data(args.sheet_id, args.range,
+                                     values_only=args.values_only, major_dim=args.major_dim)))
 
     subparser = subparsers.add_parser(
         "update", description="update sheet data")
