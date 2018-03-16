@@ -22,7 +22,9 @@ class GSheetManager(object):
     """
     _FIELDS = "nextPageToken, incompleteSearch, files(id, name)"
 
-    def __init__(self, args, credential_path=None):
+    def __init__(self, credential_path=None, reset_creds=False, app_name='Test',
+                 verbose=False, secret_file=None, run_flow_flags=None,
+                 **kwargs):
         """
         Based on python quickstart documentation at
         https://developers.google.com/sheets/api/quickstart/python
@@ -33,12 +35,13 @@ class GSheetManager(object):
         If nothing has been stored, or if the stored credentials are invalid,
         the OAuth2 flow is completed to obtain the new credentials.
 
-        cred_path - if None then default to ~/.credentials
+        cred_path: if None then default to ~/.credentials
+        args: an object with attributed
 
         Returns:
             Credentials, the obtained credential.
         """
-        self.verbose = args.verbose
+        self.verbose = verbose
 
         if credential_path is None:
             home_dir = os.path.expanduser('~')
@@ -49,21 +52,28 @@ class GSheetManager(object):
 
         store = Storage(credential_path)
         credentials = store.get()
-        if args.reset_creds or not credentials or credentials.invalid:
-            flow = client.flow_from_clientsecrets(args.secret_file, _SCOPES)
-            flow.user_agent = args.app_name
-            credentials = tools.run_flow(flow, store, args)
+        if reset_creds or not credentials or credentials.invalid:
+            flow = client.flow_from_clientsecrets(secret_file, _SCOPES)
+            flow.user_agent = app_name
+            credentials = tools.run_flow(flow, store, run_flow_flags)
 
             if self.verbose:
                 print('Storing credentials to ' + credential_path)
         self._credentials = credentials
 
-    def get_drive_service(self):
-        http = self._credentials.authorize(httplib2.Http())
-        return discovery.build('drive', 'v3', http=http)
+    @staticmethod
+    def get_service(name, version, credentials):
+        http = credentials.authorize(httplib2.Http())
+        service = discovery.build(name, version, http=http)
+        return service
 
-    def get_sheets_service(self):
-        return discovery.build('sheets', 'v4', credentials=self._credentials)
+    @classmethod
+    def get_drive_service(cls, credentials):
+        return cls.get_service('drive', 'v3', credentials)
+
+    @classmethod
+    def get_sheets_service(cls, credentials):
+        return cls.get_service('sheets', 'v4', credentials)
 
     def _find(self, name_contains=None, name_is=None, max_to_return=100, next_page_token=None,
               mime_type=None, fields=None, parent_id=None, order_by=None):
@@ -83,7 +93,7 @@ class GSheetManager(object):
         elif name_is is not None:
             query.append("name = '{}'".format(name_is))
 
-        service = self.get_drive_service()
+        service = self.get_drive_service(self._credentials)
 
         return service.files().list(
             q=" and ".join(query),
@@ -126,7 +136,7 @@ class GSheetManager(object):
                 'next_page_token': results.get('nextPageToken')}
 
     def _move_file(self, file_id, folder_id):
-        service = self.get_drive_service()
+        service = self.get_drive_service(self._credentials)
 
         # Retrieve the existing parents to remove
         _file = service.files().get(fileId=file_id,
@@ -150,17 +160,21 @@ class GSheetManager(object):
         raise NotImplementedError()
 
     def create_sheet(self, title, parent_id=None):
+        """
+        returns: sheet id
+        """
         new_sheet = {
             'properties': {"title": title}
         }
 
-        service = self.get_sheets_service()
+        service = self.get_sheets_service(self._credentials)
 
         request = service.spreadsheets().create(body=new_sheet)
         response = request.execute()
+        sheet_id = response['spreadsheetId']
         if parent_id is not None:
-            response = self._move_file(response['spreadsheetId'], parent_id)
-        return response
+            response = self._move_file(sheet_id, parent_id)
+        return sheet_id
 
     def test_sheets_access(self):
         """
@@ -219,7 +233,7 @@ def _run_test(manager, args):
     return("Success, all looks good")
 
 
-BASE_ARGPARSER = argparse.ArgumentParser(parents=[tools.argparser])
+BASE_ARGPARSER = argparse.ArgumentParser(parents=[tools.argparser], add_help=False)
 
 
 if __name__ == '__main__':
@@ -276,7 +290,7 @@ if __name__ == '__main__':
               manager.create_sheet(args.sheet_name, parent_id=args.parent_id)))
 
     args = parser.parse_args()
-    manager = GSheetManager(args)
+    manager = GSheetManager(**vars(args))
 
     if not hasattr(args, 'func'):
         parser.error("choose a command to execute")
