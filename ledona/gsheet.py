@@ -175,18 +175,26 @@ class GSheetManager(object):
         response = request.execute()
         return response
 
-    def update_sheet_data(self, sheet_id, _range, data, major_dim="ROWS"):
+    def update_sheet(self, sheet_id, _range, data, major_dim="ROWS", append=False, respond=False):
         assert major_dim in ('ROWS', 'COLUMNS')
         if self.verbose:
-            print("Updating sheet '{}' range '{}' with:\n{}".format(sheet_id, _range, data))
-
+            print("{}ing sheet '{}' range '{}' with:\n{}".format('Append' if append else 'Updat',
+                                                                 sheet_id, _range, data))
         body = {'range': _range,
                 'majorDimension': major_dim,
                 'values': data}
+
         service = self.get_sheets_service(self._credentials)
-        request = service.spreadsheets().values().update(spreadsheetId=sheet_id,
-                                                         valueInputOption="USER_ENTERED",
-                                                         range=_range, body=body)
+
+        kwargs = {'spreadsheetId': sheet_id,
+                  'valueInputOption': "USER_ENTERED",
+                  'range': _range,
+                  'includeValuesInResponse': respond,
+                  'body': body}
+
+        request = (service.spreadsheets().values().append(**kwargs)
+                   if append else
+                   service.spreadsheets().values().update(**kwargs))
         response = request.execute()
         return response
 
@@ -194,12 +202,12 @@ class GSheetManager(object):
 BASE_ARGPARSER = argparse.ArgumentParser(parents=[tools.argparser], add_help=False)
 
 
-def _update_sheet_data(manager, sheet_id, _range, csv_str, major_dim):
+def _update_sheet(manager, sheet_id, _range, csv_str, major_dim, append, respond):
     """ parser the csv string and then call the manager """
     data = []
     for row in csv_str.split("\n"):
         data.append([value.strip() for value in row.strip().split(",")])
-    manager.update_sheet_data(sheet_id, _range, data, major_dim=major_dim)
+    return manager.update_sheet(sheet_id, _range, data, major_dim=major_dim, append=append, respond=respond)
 
 
 if __name__ == '__main__':
@@ -257,12 +265,17 @@ if __name__ == '__main__':
         "update", description="update sheet data")
     subparser.add_argument('--major_dim', choices=('ROWS', 'COLUMNS'), default='ROWS',
                            help="Major dimension to use in retrieving data. Default=ROWS")
+    subparser.add_argument('--append', default=False, action="store_true",
+                           help="Append data to the table defined by the range")
+    subparser.add_argument('--respond', default=False, action="store_true",
+                           help="Request a response with the new values. Default success has no response")
     subparser.add_argument('sheet_id')
     subparser.add_argument('range', help="Sheet range in A1 notation")
     subparser.add_argument('values', help="csv data as a single string")
     subparser.set_defaults(
         func=(lambda manager, args:
-              _update_sheet_data(manager, args.sheet_id, args.range, args.values, args.major_dim)))
+              _update_sheet(manager, args.sheet_id, args.range, args.values, args.major_dim,
+                            args.append, args.respond)))
 
     args = parser.parse_args()
     manager = GSheetManager(run_flow_flags=args, **vars(args))

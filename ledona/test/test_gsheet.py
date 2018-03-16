@@ -155,7 +155,43 @@ class TestGSheet(unittest.TestCase):
         self.assertEqual(tuple(zip(search_path, ('1', '2', '3'))), path_ids)
 
     def test_get_sheet_data(self):
-        raise NotImplementedError()
+        ref_dict = {'majorDimension': 'ROWS',
+                    'range': 'TEST!A1:B2',
+                    'values': [['Texas', 'Providence'], ['4', '0']]}
+        http = HttpMockSequence([
+            ({'status': '200'}, self._sheets_discovery),
+            ({'status': '200'}, json.dumps(ref_dict))])
+        gsheet = GSheetManager()
+        with patch.object(gsheet, 'get_sheets_service', create_service_mock('sheets', http)):
+            resp = gsheet.get_sheet_data('x', "TEST!A1:B2")
+        self.assertEqual(ref_dict, resp)
 
     def test_update_sheet_data(self):
-        raise NotImplementedError()
+        sheet_id = 'xyz'
+        ref_dict = {'spreadsheetId': sheet_id,
+                    'updatedCells': 2,
+                    'updatedColumns': 2,
+                    'updatedRange': 'TEST!A1:B1',
+                    'updatedRows': 1}
+        http = HttpMockSequence([
+            ({'status': '200'}, self._sheets_discovery),
+            ({'status': '200'}, json.dumps(ref_dict))])
+        gsheet = GSheetManager()
+        with patch.object(gsheet, 'get_sheets_service', create_service_mock('sheets', http)):
+            resp = gsheet.update_sheet(sheet_id, "TEST!A1:B2", ['2', '3'])
+        self.assertEqual(ref_dict, resp)
+
+    def test_append_sheet_data(self):
+        sheet_id = 'xyz'
+        ref_dict = {'spreadsheetId': sheet_id,
+                    'updatedCells': 2,
+                    'updatedColumns': 2,
+                    'updatedRange': 'TEST!A3:B3',
+                    'updatedRows': 1}
+        http = HttpMockSequence([
+            ({'status': '200'}, self._sheets_discovery),
+            ({'status': '200'}, json.dumps(ref_dict))])
+        gsheet = GSheetManager()
+        with patch.object(gsheet, 'get_sheets_service', create_service_mock('sheets', http)):
+            resp = gsheet.update_sheet(sheet_id, "TEST!A1:B2", ['2', '3'], append=True)
+        self.assertEqual(ref_dict, resp)
