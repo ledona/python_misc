@@ -166,8 +166,40 @@ class GSheetManager(object):
             response = self._move_file(sheet_id, parent_id)
         return sheet_id
 
+    def get_sheet_data(self, sheet_id, _range, major_dim="ROWS"):
+        assert major_dim in ('ROWS', 'COLUMNS')
+        service = self.get_sheets_service(self._credentials)
+        request = service.spreadsheets().values().get(spreadsheetId=sheet_id,
+                                                      range=_range,
+                                                      majorDimension=major_dim)
+        response = request.execute()
+        return response
+
+    def update_sheet_data(self, sheet_id, _range, data, major_dim="ROWS"):
+        assert major_dim in ('ROWS', 'COLUMNS')
+        if self.verbose:
+            print("Updating sheet '{}' range '{}' with:\n{}".format(sheet_id, _range, data))
+
+        body = {'range': _range,
+                'majorDimension': major_dim,
+                'values': data}
+        service = self.get_sheets_service(self._credentials)
+        request = service.spreadsheets().values().update(spreadsheetId=sheet_id,
+                                                         valueInputOption="USER_ENTERED",
+                                                         range=_range, body=body)
+        response = request.execute()
+        return response
+
 
 BASE_ARGPARSER = argparse.ArgumentParser(parents=[tools.argparser], add_help=False)
+
+
+def _update_sheet_data(manager, sheet_id, _range, csv_str, major_dim):
+    """ parser the csv string and then call the manager """
+    data = []
+    for row in csv_str.split("\n"):
+        data.append([value.strip() for value in row.strip().split(",")])
+    manager.update_sheet_data(sheet_id, _range, data, major_dim=major_dim)
 
 
 if __name__ == '__main__':
@@ -211,8 +243,29 @@ if __name__ == '__main__':
         func=(lambda manager, args:
               manager.create_sheet(args.sheet_name, parent_id=args.parent_id)))
 
+    subparser = subparsers.add_parser(
+        "get", description="get sheet data")
+    subparser.add_argument('sheet_id')
+    subparser.add_argument('range', help="Sheet range in A1 notation")
+    subparser.add_argument('--major_dim', choices=('ROWS', 'COLUMNS'), default='ROWS',
+                           help="Major dimension to use in retrieving data. Default=ROWS")
+    subparser.set_defaults(
+        func=(lambda manager, args:
+              manager.get_sheet_data(args.sheet_id, args.range, major_dim=args.major_dim)))
+
+    subparser = subparsers.add_parser(
+        "update", description="update sheet data")
+    subparser.add_argument('--major_dim', choices=('ROWS', 'COLUMNS'), default='ROWS',
+                           help="Major dimension to use in retrieving data. Default=ROWS")
+    subparser.add_argument('sheet_id')
+    subparser.add_argument('range', help="Sheet range in A1 notation")
+    subparser.add_argument('values', help="csv data as a single string")
+    subparser.set_defaults(
+        func=(lambda manager, args:
+              _update_sheet_data(manager, args.sheet_id, args.range, args.values, args.major_dim)))
+
     args = parser.parse_args()
-    manager = GSheetManager(**vars(args), run_flow_flags=args)
+    manager = GSheetManager(run_flow_flags=args, **vars(args))
 
     if not hasattr(args, 'func'):
         parser.error("choose a command to execute")

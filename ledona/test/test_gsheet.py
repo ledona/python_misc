@@ -153,3 +153,9 @@ class TestGSheet(unittest.TestCase):
         search_path = ['t1', 't2', 'sheet']
         path_ids = gsheet.find_path(search_path)
         self.assertEqual(tuple(zip(search_path, ('1', '2', '3'))), path_ids)
+
+    def test_get_sheet_data(self):
+        raise NotImplementedError()
+
+    def test_update_sheet_data(self):
+        raise NotImplementedError()
