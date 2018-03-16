@@ -12,8 +12,7 @@ from oauth2client import tools
 from oauth2client.file import Storage
 
 
-_SCOPES = ['https://www.googleapis.com/auth/spreadsheets',
-          'https://www.googleapis.com/auth/drive']
+_SCOPES = ['https://www.googleapis.com/auth/drive']
 
 
 class GSheetManager(object):
@@ -274,7 +273,7 @@ if __name__ == '__main__':
               manager.create_sheet(args.sheet_name, parent_id=args.parent_id)))
 
     args = parser.parse_args()
-    manager = GSheetManager(**vars(args))
+    manager = GSheetManager(**vars(args), run_flow_flags=args)
 
     if not hasattr(args, 'func'):
         parser.error("choose a command to execute")
