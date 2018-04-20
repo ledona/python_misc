@@ -23,7 +23,7 @@ class GSheetManager(object):
     _FIELDS = "nextPageToken, incompleteSearch, files(id, name)"
 
     def __init__(self, credential_path=None, reset_creds=False, app_name='Test',
-                 verbose=False, secret_file=None, run_flow_flags=None,
+                 verbose=False, debug=False, secret_file=None, run_flow_flags=None,
                  **kwargs):
         """
         Based on python quickstart documentation at
@@ -41,7 +41,8 @@ class GSheetManager(object):
         Returns:
             Credentials, the obtained credential.
         """
-        self.verbose = verbose
+        self.debug = debug
+        self.verbose = verbose or debug
 
         if credential_path is None:
             home_dir = os.path.expanduser('~')
@@ -78,7 +79,7 @@ class GSheetManager(object):
     def find(self, name_contains=None, name_is=None, max_to_return=100, next_page_token=None,
              mime_type_contains=None, fields=None, parent_id=None, order_by=None):
         """
-        path: list of folder names
+        returns: see https://developers.google.com/drive/v3/reference/files/list
         """
         if name_contains is not None and name_is is not None:
             raise ValueError("name_contains and name_is cannot bot be not None")
@@ -184,8 +185,10 @@ class GSheetManager(object):
     def update_sheet(self, sheet_id, _range, data, major_dim="ROWS", append=False, respond=False):
         assert major_dim in ('ROWS', 'COLUMNS')
         if self.verbose:
-            print("{}ing sheet '{}' range '{}' with:".format('Append' if append else 'Updat',
-                                                             sheet_id, _range))
+            print("{}ing sheet '{}' at range '{}' with {} rows.".format('Append' if append else 'Updat',
+                                                                        sheet_id, _range,
+                                                                        len(data)))
+        if self.debug:
             pprint(data)
         body = {'range': _range,
                 'majorDimension': major_dim,
