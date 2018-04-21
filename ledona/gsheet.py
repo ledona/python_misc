@@ -151,13 +151,17 @@ class GSheetManager(object):
         path_ids.append((path[-1], resp['files'][0]['id']))
         return tuple(path_ids)
 
-    def create_sheet(self, title, parent_id=None):
+    def create_sheet(self, title, subsheet_titles=None, parent_id=None):
         """
         returns: sheet id
         """
         new_sheet = {
             'properties': {"title": title}
         }
+
+        if subsheet_titles is not None:
+            new_sheet['sheets'] = [{'properties': {'title': ss_title}}
+                                   for ss_title in subsheet_titles]
 
         service = self.get_sheets_service(self._credentials)
 
@@ -168,9 +172,38 @@ class GSheetManager(object):
             response = self._move_file(sheet_id, parent_id)
         return sheet_id
 
+    def does_subsheet_exist(self, sheet_id, subsheet_title):
+        # TODO: need a test for this
+        service = self.get_sheets_service(self._credentials)
+        request = service.spreadsheets().get(spreadsheetId=sheet_id,
+                                             includeGridData=False)
+        response = request.execute()
+        for sheet_info in response['sheets']:
+            if sheet_info['properties']['title'] == subsheet_title:
+                return True
+
+        return False
+
+    def create_subsheet(self, sheet_id, subsheet_title):
+        # TODO: need a test for this
+        request_body = {'requests': [{
+            'addSheet': {
+                'properties': {
+                    'title': subsheet_title
+                }
+            }
+        }]}
+        service = self.get_sheets_service(self._credentials)
+        request = service.spreadsheets().batchUpdate(spreadsheetId=sheet_id,
+                                                     body=request_body)
+        response = request.execute()
+        return response
+
     def get_sheet_data(self, sheet_id, _range, major_dim="ROWS", values_only=False):
         """
         values_only: if True just return the list of lists with values found on the sheet
+
+        _range: The range of cells to get data for, in A1 notation
         """
         assert major_dim in ('ROWS', 'COLUMNS')
         service = self.get_sheets_service(self._credentials)
@@ -217,18 +250,19 @@ def _update_sheet(manager, sheet_id, _range, csv_str, major_dim, append, respond
     data = []
     for row in csv_str.split("\n"):
         data.append([value.strip() for value in row.strip().split(",")])
-    return manager.update_sheet(sheet_id, _range, data, major_dim=major_dim, append=append, respond=respond)
+    return manager.update_sheet(sheet_id, _range, data,
+                                major_dim=major_dim, append=append, respond=respond)
 
 
 if __name__ == '__main__':
-    import pprint
     parser = argparse.ArgumentParser(parents=[BASE_ARGPARSER])
     parser.add_argument('--app_name', default="TEST", help="default = TEST")
     parser.add_argument('--reset_creds', default=False, action="store_true",
                         help="Reset all previously granted credentials")
     parser.add_argument('--verbose', default=False, action="store_true")
     parser.add_argument('--secret_file',
-                        help="Project credentials file. Instructions on creation found at https://developers.google.com/sheets/api/quickstart/python")
+                        help=("Project credentials file. Instructions on creation found at "
+                              "https://developers.google.com/sheets/api/quickstart/python"))
 
     subparsers = parser.add_subparsers(title="cmd")
 
@@ -294,4 +328,4 @@ if __name__ == '__main__':
 
     if not hasattr(args, 'func'):
         parser.error("choose a command to execute")
-    pprint.pprint(args.func(manager, args))
+    pprint(args.func(manager, args))
