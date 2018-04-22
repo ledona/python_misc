@@ -218,11 +218,10 @@ class GSheetManager(object):
     def update_sheet(self, sheet_id, _range, data, major_dim="ROWS", append=False, respond=False):
         assert major_dim in ('ROWS', 'COLUMNS')
         if self.verbose:
-            print("{}ing sheet '{}' at range '{}' with {} rows.".format('Append' if append else 'Updat',
-                                                                        sheet_id, _range,
-                                                                        len(data)))
-        if self.debug:
-            pprint(data)
+            print("{}ing sheet '{}' at range \"{}\" with {} rows."
+                  .format('Append' if append else 'Updat', sheet_id, _range, len(data)))
+            if self.debug:
+                pprint(data)
         body = {'range': _range,
                 'majorDimension': major_dim,
                 'values': data}
