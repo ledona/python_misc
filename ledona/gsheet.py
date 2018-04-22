@@ -151,6 +151,46 @@ class GSheetManager(object):
         path_ids.append((path[-1], resp['files'][0]['id']))
         return tuple(path_ids)
 
+    def set_dimension_visibility(self, sheet_id, ranges, visible, subsheet_id, dim='COLS'):
+        """
+        Each requested range's visibility will be set to 'visible'
+
+        subsheet_id: can be retrieved using get_subsheet_id
+        dim: COLS or ROWS
+        ranges: Zero indexed list of ints or tuples. For tuples, they must each be of length 2 indicated the bounds
+          of the range. All rows/columns inclusive of the low and exclusive of the high will be updated.
+          If a range is an int, just that row/column will be updated
+        """
+        # TODO: add tests
+        assert isinstance(visible, bool)
+        assert subsheet_id is not None
+        assert dim in ('COLS', 'ROWS')
+
+        request_body = {'requests': []}
+        for _range in ranges:
+            request = {
+                'updateDimensionProperties': {
+                    "range": {
+                        "sheetId": subsheet_id,
+                        "dimension": 'COLUMNS' if dim == 'COLS' else 'ROWS',
+                        "startIndex": _range if isinstance(_range, int) else _range[0],
+                        "endIndex": (_range + 1) if isinstance(_range, int) else _range[1],
+                    },
+                    "properties": {
+                        "hiddenByUser": not visible,
+                    },
+                    "fields": 'hiddenByUser',
+                }
+            }
+            request_body['requests'].append(request)
+
+        service = self.get_sheets_service(self._credentials)
+        response = service.spreadsheets().batchUpdate(
+            spreadsheetId=sheet_id,
+            body=request_body
+        ).execute()
+        return response
+
     def create_sheet(self, title, subsheet_titles=None, parent_id=None):
         """
         returns: sheet id
@@ -172,19 +212,33 @@ class GSheetManager(object):
             response = self._move_file(sheet_id, parent_id)
         return sheet_id
 
-    def does_subsheet_exist(self, sheet_id, subsheet_title):
+    def get_subsheets_info(self, sheet_id):
+        """ return a list of tuples of (subsheet_id, subsheet_title) """
         # TODO: need a test for this
         service = self.get_sheets_service(self._credentials)
         request = service.spreadsheets().get(spreadsheetId=sheet_id,
                                              includeGridData=False)
         response = request.execute()
-        for sheet_info in response['sheets']:
-            if sheet_info['properties']['title'] == subsheet_title:
-                return True
+        subsheets = tuple((sheet_info['properties']['sheetId'],
+                           sheet_info['properties']['title'])
+                          for sheet_info in response['sheets'])
+        return subsheets
 
-        return False
+    def get_subsheet_id(self, sheet_id, subsheet_title):
+        """
+        subsheet_title: if None the get the id of the first subsheet
+
+        return the ID of the subsheet, or None if there is no
+        subsheet with the requested title
+        """
+        # TODO: need a test for this
+        for ss_id, ss_title in self.get_subsheets_info(sheet_id):
+            if ss_title == subsheet_title:
+                return ss_id
+        return None
 
     def create_subsheet(self, sheet_id, subsheet_title):
+        """ return the subsheet ID """
         # TODO: need a test for this
         request_body = {'requests': [{
             'addSheet': {
@@ -197,7 +251,7 @@ class GSheetManager(object):
         request = service.spreadsheets().batchUpdate(spreadsheetId=sheet_id,
                                                      body=request_body)
         response = request.execute()
-        return response
+        return response['replies'][0]['addSheet']['properties']['sheetId']
 
     def get_sheet_data(self, sheet_id, _range, major_dim="ROWS", values_only=False):
         """
@@ -218,8 +272,8 @@ class GSheetManager(object):
     def update_sheet(self, sheet_id, _range, data, major_dim="ROWS", append=False, respond=False):
         assert major_dim in ('ROWS', 'COLUMNS')
         if self.verbose:
-            print("{}ing sheet '{}' at range \"{}\" with {} rows."
-                  .format('Append' if append else 'Updat', sheet_id, _range, len(data)))
+            print("{} sheet '{}' at range \"{}\" with {} rows."
+                  .format('Appending to' if append else 'Updating', sheet_id, _range, len(data)))
             if self.debug:
                 pprint(data)
         body = {'range': _range,
