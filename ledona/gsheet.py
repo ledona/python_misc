@@ -151,6 +151,36 @@ class GSheetManager(object):
         path_ids.append((path[-1], resp['files'][0]['id']))
         return tuple(path_ids)
 
+    def sort(self, sheet_id, subsheet_id, sort_cols, start_col_idx, start_row_idx,
+             end_col_idx=None, end_row_idx=None):
+        """
+        all indices are zero based
+
+        sort_cols: list of tuples of (sort_col_idx, "asc"|"desc"), or just a list of sort_col_idx
+          former then sort defaults to asc
+        """
+        sort_specs = ([{'dimensionIndex': col, 'sortOrder': ordering} for col, ordering in sort_cols]
+                      if isinstance(sort_cols[0], tuple) else
+                      [{'dimensionIndex': col, 'sortOrder': "DESCENDING"} for col in sort_cols])
+
+        sort_request = {'sortRange': {
+            'range': {
+                'sheet_id': subsheet_id,
+                'startRowIndex': start_row_idx,
+                'startColumnIndex': start_col_idx,
+                'endRowIndex': end_row_idx,
+                'endColumnIndex': end_col_idx
+            },
+            'sortSpecs': sort_specs
+        }}
+
+        service = self.get_sheets_service(self._credentials)
+        response = service.spreadsheets().batchUpdate(
+            spreadsheetId=sheet_id,
+            body={'requests': [sort_request]}
+        ).execute()
+        return response
+
     def set_dimension_visibility(self, sheet_id, ranges, visible, subsheet_id, dim='COLS'):
         """
         Each requested range's visibility will be set to 'visible'
