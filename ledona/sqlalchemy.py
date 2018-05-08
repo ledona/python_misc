@@ -65,6 +65,7 @@ class SQLAlchemyWrapper(object):
         """
         path_to_db_file - if None then the DB will be in memory
         """
+        self.orig_path_to_db = path_to_db_file
         db_path = ('/' + path_to_db_file) if path_to_db_file is not None else ""
         self.engine = create_engine('sqlite://' + db_path,
                                     echo=verbose)
