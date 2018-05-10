@@ -1,2 +1,5 @@
-# needed for performance result storage
+# needed for gsheet
 google-api-python-client
+
+# for base_test_class
+pandas
