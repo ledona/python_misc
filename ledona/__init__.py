@@ -17,7 +17,8 @@ def process_timer(timed_func):
             try:
                 result = timed_func(*args, **kwargs)
             finally:
-                print("{} secs elapsed".format(round(time.perf_counter() - _start, 5)))
+                print("{} secs elapsed".format(round(time.perf_counter() - _start, 5)),
+                      file=sys.stderr)
             return result
 
         return wrapper
