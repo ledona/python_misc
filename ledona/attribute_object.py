@@ -16,6 +16,7 @@ class AttributeObject(argparse.Namespace):
         setattr(self, key, value)
 
     def __hash__(self):
+        raise NotImplementedError()
         return hash(flatten_dict_to_frozensets(vars(self)))
 
     def __len__(self):
