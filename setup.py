@@ -7,7 +7,8 @@ setup(
     packages=find_packages(),
     install_requires=(
         'google-api-python-client',
-
+        'oauth2client',
+        
         # for base test class
         'pandas')
 )
