@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
+import os
 
 
 # make sure that foreign keys are enforced
@@ -61,10 +62,18 @@ class SQLAlchemyWrapper(object):
 
     db_obj = SQLAlchemyWrapper("filename.db")
     """
-    def __init__(self, path_to_db_file=None, verbose=False):
+    def __init__(self, path_to_db_file=None, verbose=False, do_not_create=True):
         """
         path_to_db_file - if None then the DB will be in memory
+        do_not_create - if True then first test that a file at path_to_db_file exists, and raise
+           an exception if the file is not there. if path_to_db_file is None and
+           do_not_create is True then a ValueError is raised
         """
+        if do_not_create:
+            if path_to_db_file is None:
+                raise ValueError("if path_to_db_file is None then do_not_create muse be false")
+            if not os.path.isfile(path_to_db_file):
+                raise FileNotFoundError("db file '{}' not found".format(path_to_db_file))
         self.orig_path_to_db = path_to_db_file
         db_path = ('/' + path_to_db_file) if path_to_db_file is not None else ""
         self.engine = create_engine('sqlite://' + db_path,
