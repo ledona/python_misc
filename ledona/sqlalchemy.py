@@ -66,12 +66,9 @@ class SQLAlchemyWrapper(object):
         """
         path_to_db_file - if None then the DB will be in memory
         do_not_create - if True then first test that a file at path_to_db_file exists, and raise
-           an exception if the file is not there. if path_to_db_file is None and
-           do_not_create is True then a ValueError is raised
+           an exception if the file is not there. ignored if path_to_db_file is None (i.e. in memory DB)
         """
-        if do_not_create:
-            if path_to_db_file is None:
-                raise ValueError("if path_to_db_file is None then do_not_create muse be false")
+        if do_not_create and path_to_db_file is not None:
             if not os.path.isfile(path_to_db_file):
                 raise FileNotFoundError("db file '{}' not found".format(path_to_db_file))
         self.orig_path_to_db = path_to_db_file
