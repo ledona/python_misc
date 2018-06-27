@@ -144,18 +144,29 @@ class SQLAlchemyWrapper(object):
             session.close()
 
 
-def get_db_obj(path_to_db_file=None, verbose=False, sqlalchemy_wrapper=SQLAlchemyWrapper):
-    return sqlalchemy_wrapper(path_to_db_file, verbose=verbose)
+def get_db_obj(path_to_db_file=None, verbose=False, sqlalchemy_wrapper=SQLAlchemyWrapper,
+               do_not_create=True):
+    """
+    do_not_create: if True and there is not already a file at path_to_db_file then raise
+      FileNotFoundError, By default do not create a new DB
+    """
+    return sqlalchemy_wrapper(path_to_db_file=path_to_db_file,
+                              do_not_create=do_not_create, verbose=verbose)
 
 
 def create_empty_db(sqlalchemy_orm_base, filename=None, verbose=False,
-                    sqlalchemy_wrapper=SQLAlchemyWrapper):
+                    sqlalchemy_wrapper=SQLAlchemyWrapper, overwrite_if_exists=False):
     """
-    create the fantasy db at filename
+    create a new db at filename
 
     filename - if None then create an in-memory DB (used for testing)
+    overwrite_if_exists - if False and filename is not None and a file with that name exists then
+       raise FileExistsError
     returns the db_obj reference to the database
     """
-    db_obj = get_db_obj(filename, verbose, sqlalchemy_wrapper=sqlalchemy_wrapper)
+    if filename is not None and not overwrite_if_exists and os.path.isfile(filename):
+        raise FileExistsError("file '{}' already exists".format(filename))
+    db_obj = get_db_obj(filename, verbose, do_not_create=False,
+                        sqlalchemy_wrapper=sqlalchemy_wrapper)
     sqlalchemy_orm_base.metadata.create_all(db_obj.engine)
     return db_obj
