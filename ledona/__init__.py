@@ -4,6 +4,7 @@ import time
 from . import sqlalchemy
 from .attribute_object import AttributeObject
 from .base_test_class import BaseTestClass
+from . import sftp
 
 
 def process_timer(timed_func):
