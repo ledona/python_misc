@@ -45,7 +45,7 @@ def connect(connection_str=None, hostname=None, username=None, port=None, passwo
 
         # grab port and user if needed
         if username is None:
-            username = user_config['user']
+            username = user_config.get('user')
         # only use port if not already explicitly set
         if port is None and 'port' in user_config:
             port = int(user_config['port'])
