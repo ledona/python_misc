@@ -22,7 +22,7 @@ class AttributeObject(argparse.Namespace):
     def __len__(self):
         return len(vars(self))
 
-    def get(self, key, default):
+    def get(self, key, default=None):
         return getattr(self, key, default)
 
     def items(self):
