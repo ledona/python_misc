@@ -7,8 +7,7 @@ from .attribute_object import AttributeObject
 class BaseTestClass(unittest.TestCase):
     """ Add some additional testing and assertions to the base test case class """
 
-    @classmethod
-    def assertDataFrameEqual(cls, df1, df2, cols=None, msg=None):
+    def assertDataFrameEqual(self, df1, df2, cols=None, msg=None):
         """
         Test for equivalence of 2 pandas data frames, ignoring column order
         cols is an optional set of column names. If it is set then only these columns will be
@@ -26,8 +25,13 @@ class BaseTestClass(unittest.TestCase):
 
         df1 = df1.reindex(sorted(df1.columns), axis=1)
         df2 = df2.reindex(sorted(df2.columns), axis=1)
-        pandas.util.testing.assert_frame_equal(df1, df2,
-                                               check_names=True, obj=msg)
+
+        if cols is None:
+            # test if the columns match
+            self.assertEqual(df1.columns.tolist(), df2.columns.tolist(),
+                             ((msg + " :: ") if msg is not None else "") +
+                             "column names don't match")
+        pandas.util.testing.assert_frame_equal(df1, df2, check_names=True, obj=msg)
 
     def compare_obj_obj(self, obj1, obj2, attr_names, msg=""):
         """ test that the values for attr_names attributes are the same across obj1 and obj2 """
@@ -43,7 +47,8 @@ class BaseTestClass(unittest.TestCase):
     def compare_objs_objs(self, objs1, objs2, attr_names, msg=""):
         """ use compare_obj_obj on list/tuple of objects """
         self.assertEqual(len(objs1), len(objs2),
-                         msg + ": lengths do not match. objs1 has length {}, objs2 has length {}".format(
+                         msg +
+                         ": lengths do not match. objs1 has length {}, objs2 has length {}".format(
                              len(objs1), len(objs2)))
         for i, (obj1, obj2) in enumerate(zip(objs1, objs2)):
             self.compare_obj_obj(obj1, obj2, attr_names, msg + ": items {} don't match".format(i))
