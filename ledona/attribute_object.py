@@ -33,3 +33,14 @@ class AttributeObject(argparse.Namespace):
 
     def values(self):
         return vars(self).values()
+
+    def __eq__(self, other):
+        """
+        compare this instance to another object, test for equivalance of object attributes
+        by iterating over keys/values returned by vars(self) and testing against getattr(other, key)
+        """
+        for key, value in vars(self).items():
+            if not hasattr(other, key) or value != getattr(other, key):
+                return False
+
+        return True
