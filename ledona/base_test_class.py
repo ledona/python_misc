@@ -3,7 +3,7 @@ import pandas
 
 from .attribute_object import AttributeObject
 
-
+# TODO: somehow merge this with deep_compare
 class BaseTestClass(unittest.TestCase):
     """ Add some additional testing and assertions to the base test case class """
 
