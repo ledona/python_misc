@@ -33,3 +33,10 @@ class AttributeObject(argparse.Namespace):
 
     def values(self):
         return vars(self).values()
+
+    def __eq__(self, other):
+        """ compare the attributes of self to the attributes of other """
+        for attr_name, value in self.items():
+            if not hasattr(other, attr_name) or getattr(other, attr_name) != value:
+                return False
+        return True
