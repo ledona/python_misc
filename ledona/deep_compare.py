@@ -95,13 +95,13 @@ def deep_compare_objs(obj1, obj2, attr_names=None, msg="", assert_tests=True):
     return True
 
 
-def deep_compare_ordered_collections(objs1, objs2, attr_names, msg="", assert_tests=True):
+def deep_compare_ordered_collections(objs1, objs2, msg="", assert_tests=True):
     try:
         assert len(objs1) == len(objs2), \
             msg + ": lengths do not match. objs1 has length {}, objs2 has length {}".format(
                 len(objs1), len(objs2))
         for i, (obj1, obj2) in enumerate(zip(objs1, objs2)):
-            deep_compare(obj1, obj2, attr_names, msg + ": items {} don't match".format(i))
+            deep_compare(obj1, obj2, msg + ": items {} don't match".format(i))
     except AssertionError:
         if assert_tests:
             raise
