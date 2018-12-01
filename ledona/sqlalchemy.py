@@ -79,9 +79,7 @@ class SQLAlchemyWrapper(object):
 
     def get_session(self):
         """
-        Create and return a new session. The DBManager for the session's database is available
-        via the session's info at the key fantasy.db_manager (if it is specified). For example:
-        session.info['fantasy.db_manager']
+        Create and return a new session.
         """
         return self._SESSION_MAKER_FACTORY()
 
