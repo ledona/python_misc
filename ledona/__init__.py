@@ -8,6 +8,7 @@ from .deep_compare import (deep_compare, deep_compare_dicts, deep_compare_objs,
                            compare_dataframes, deep_compare_ordered_collections)
 from . import sftp
 from .json import make_json_compatible
+from . import slack
 
 
 def process_timer(timed_func):
