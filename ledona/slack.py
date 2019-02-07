@@ -5,6 +5,7 @@ import time
 
 
 def webhook(url, text=None, attachments=None):
+    """ returns the requests result """
     dict_ = {}
     if text is not None:
         assert isinstance(text, str)
@@ -27,7 +28,7 @@ def notify(func,
     if not (on_entrance or on_exit):
         raise ValueError("Nothing to do, both on_exit and on_entrance are False")
     @functools.wraps(func)
-    def wrapper_notify(*args, **kargs)):
+    def wrapper_notify(*args, **kargs):
         raise NotImplementedError()
         if include_timing:
             start_time = time.now()
