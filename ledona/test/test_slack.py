@@ -7,6 +7,12 @@ import os
 
 from .. import slack
 
+@pytest.fixture(scope="function", autouse=True)
+def enable_slack():
+    """ make sure slack is enabled prior to every test """
+    slack.enable()
+
+
 @pytest.fixture
 def mock_requests():
     with patch("ledona.slack.requests") as mock_requests_cls:
@@ -28,6 +34,16 @@ def test_webhook(mock_requests, text, attachments, ref_data):
     assert SLACK_URL == mock_requests.post.call_args[0][0]
     test_data = json.loads(mock_requests.post.call_args[1]['data'])
     assert ref_data == test_data
+
+
+def test_disable(mock_requests):
+    assert slack.is_enabled()
+    slack.disable()
+    assert not slack.is_enabled()
+    slack.webhook(SLACK_URL, text="disable test")
+    slack.enable()
+    assert slack.is_enabled()
+    mock_requests.post.not_called()
 
 @pytest.mark.parametrize(
     "url,env_var,additional_msg,on_entrance,on_exit,include_timing,include_host",

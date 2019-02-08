@@ -5,8 +5,33 @@ from datetime import datetime
 import socket
 import os
 
+_ENABLED = True
+
+def is_enabled():
+    """ is slack notification enabled? """
+    return _ENABLED
+
+
+def enable():
+    """
+    enable notifications. notifications are enabled by default,
+    only useful after a call to disable
+    """
+    global _ENABLED
+    _ENABLED = True
+
+
+def disable():
+    """ disable notifications """
+    global _ENABLED
+    _ENABLED = False
+
+
 def webhook(url, text=None, attachments=None):
-    """ returns the requests result """
+    """ returns the requests result, or 'disabled' if slack notifications are disabled """
+    if not is_enabled():
+        return "disabled"
+
     dict_ = {}
     if text is not None:
         assert isinstance(text, str)
@@ -20,7 +45,6 @@ def webhook(url, text=None, attachments=None):
 
     return requests.post(url, data=json.dumps(dict_),
                          headers={'Content-Type': 'application/json'})
-
 
 def notify(webhook_url=None, env_var=None, additional_msg=None,
            on_entrance=True, on_exit=True, include_timing=True, include_host=True):
