@@ -10,3 +10,6 @@ paramiko
 
 # for slack
 requests
+
+# for sqlalchemy
+sqlalchemy
