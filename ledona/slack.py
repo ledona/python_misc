@@ -4,6 +4,7 @@ import functools
 from datetime import datetime
 import socket
 import os
+import warnings
 
 _ENABLED = True
 
@@ -46,9 +47,19 @@ def webhook(url, text=None, attachments=None):
     return requests.post(url, data=json.dumps(dict_),
                          headers={'Content-Type': 'application/json'})
 
-def notify(webhook_url=None, env_var=None, additional_msg=None,
+
+class SlackNotifyError(Exception):
+    pass
+
+
+def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_requests_error=False,
            on_entrance=True, on_exit=True, include_timing=True, include_host=True):
-    """ decorator that sends a message to slack on func entrance/exit """
+    """
+    decorator that sends a message to slack on func entrance/exit
+
+    raise_on_requests_error - If true then an exception is raised if the http response is not success
+      if false, then a warning will be issued
+    """
     assert on_entrance or on_exit, \
         "Nothing to do, both on_exit and on_entrance are False"
     assert (webhook_url is None) != (env_var is None), \
@@ -79,8 +90,13 @@ def notify(webhook_url=None, env_var=None, additional_msg=None,
                 msg += "called function {}".format(func)
                 if include_timing:
                     msg += " at {}".format(start_dt)
-                webhook(url, text=msg)
-
+                r = webhook(url, text=msg)
+                if r.status_code != 200:
+                    msg = "Non 200 response from Slack. {}".format(r)
+                    if raise_on_requests_error:
+                        raise SlackNotifyError(msg, r)
+                    else:
+                        warnings.warn(msg)
             try:
                 result = func(*args, **kwargs)
             finally:
@@ -92,7 +108,13 @@ def notify(webhook_url=None, env_var=None, additional_msg=None,
                     if include_timing:
                         end_dt = datetime.now()
                         msg += " at {}. Elapsed time {}".format(end_dt, end_dt - start_dt)
-                    webhook(url, text=msg)
+                    r = webhook(url, text=msg)
+                    if r.status_code != 200:
+                        msg = "Non 200 response from Slack. {}".format(r)
+                        if raise_on_requests_error:
+                            raise SlackNotifyError(msg, r)
+                        else:
+                            warnings.warn(msg)
             return result
 
         return wrapper_notify

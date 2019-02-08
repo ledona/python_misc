@@ -16,6 +16,7 @@ def enable_slack():
 @pytest.fixture
 def mock_requests():
     with patch("ledona.slack.requests") as mock_requests_cls:
+        mock_requests_cls.post.return_value.status_code = 200
         yield mock_requests_cls
 
 
@@ -59,6 +60,7 @@ def test_decorator_simple_w_url(url, env_var, additional_msg,
     """ some minimal testing of notify decorator """
     with ExitStack() as stack:
         mock_webhook = stack.enter_context(patch("ledona.slack.webhook"))
+        mock_webhook.return_value.status_code = 200
         if env_var is not None:
             stack.enter_context(patch.dict(os.environ,
                                            {env_var: SLACK_URL + "env"}))
