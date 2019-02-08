@@ -3,6 +3,7 @@ from contextlib import ExitStack
 import pytest
 import json
 import socket
+import os
 
 from .. import slack
 
@@ -44,7 +45,7 @@ def test_decorator_simple_w_url(url, env_var, additional_msg,
         mock_webhook = stack.enter_context(patch("ledona.slack.webhook"))
         if env_var is not None:
             stack.enter_context(patch.dict(os.environ,
-                                           {ENV_VAR: SLACK_URL + "env"}))
+                                           {env_var: SLACK_URL + "env"}))
 
         call_args = []
 

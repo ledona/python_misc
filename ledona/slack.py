@@ -3,6 +3,7 @@ import json
 import functools
 from datetime import datetime
 import socket
+import os
 
 def webhook(url, text=None, attachments=None):
     """ returns the requests result """
@@ -62,7 +63,7 @@ def notify(webhook_url=None, env_var=None, additional_msg=None,
                 if on_exit:
                     msg = additional_msg
                     if include_host:
-                        msg = socket.gethostname() + " "
+                        msg += socket.gethostname() + " "
                     msg += "exited function {}".format(func)
                     if include_timing:
                         end_dt = datetime.now()
