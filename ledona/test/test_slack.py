@@ -46,17 +46,28 @@ def test_disable(mock_requests):
     assert slack.is_enabled()
     mock_requests.post.not_called()
 
+
+def notify_test_helper(msg, required_present_text, required_absent_text):
+    assert {type(required_present_text), type(required_absent_text)} == {list}
+    for text in required_present_text:
+        assert text in msg
+
+    for text in required_absent_text:
+        assert text not in msg
+
+
 @pytest.mark.parametrize(
-    "url,env_var,additional_msg,on_entrance,on_exit,include_timing,include_host",
-    [(SLACK_URL, None, None, True, True, True, True),
-     (SLACK_URL, None, None, False, True, True, True),
-     (SLACK_URL, None, None, True, False, True, True),
-     (SLACK_URL, None, 'additional text', True, True, True, True),
-     (None, "ENV_VAR", 'additional text', True, True, True, True),
+    "url,env_var,additional_msg,on_entrance,on_exit,include_timing,include_host,include_args",
+    [(SLACK_URL, None, None, True, True, True, True, True),
+     (SLACK_URL, None, None, False, True, True, True, False),
+     (SLACK_URL, None, None, True, False, True, False, False),
+     (SLACK_URL, None, 'additional text', True, True, True, True, False),
+     (None, "ENV_VAR", 'additional text', True, True, True, True, True),
     ]
 )
 def test_decorator_simple_w_url(url, env_var, additional_msg,
-                                on_entrance, on_exit, include_timing, include_host):
+                                on_entrance, on_exit, include_timing, include_host,
+                                include_args):
     """ some minimal testing of notify decorator """
     with ExitStack() as stack:
         mock_webhook = stack.enter_context(patch("ledona.slack.webhook"))
@@ -68,48 +79,47 @@ def test_decorator_simple_w_url(url, env_var, additional_msg,
         call_args = []
 
         @slack.notify(webhook_url=url, env_var=env_var, additional_msg=additional_msg,
-                      on_entrance=on_entrance, on_exit=on_exit,
+                      on_entrance=on_entrance, on_exit=on_exit, include_args=include_args,
                       include_timing=include_timing, include_host=include_host)
         def test_func(a, b, c=None, d=None):
-            call_args.append((a, b, c, d))
+            call_args.append(((a, b), {'c': c, 'd': d}))
 
         test_func(1, 2, c='x', d='y')
 
-        assert call_args == [(1, 2, 'x', 'y')]
+        assert call_args == [((1, 2), {'c': 'x', 'd': 'y'})]
 
         assert mock_webhook.call_count == (1 if on_entrance else 0) + (1 if on_exit else 0)
 
+        # figure out the expected text present and absent in the msg
         webhook_call_args_list = list(mock_webhook.call_args_list)
+        host_name = socket.gethostname()
+        required_text = ['test_func']
+        absent_text = []
+        if include_host:
+            required_text.append(host_name)
+        else:
+            absent_text.append(host_name)
+        if additional_msg is not None:
+            required_text.append(additional_msg)
+        if include_args:
+            required_text += [str(call_args[0][0]), str(call_args[0][1])]
+        else:
+            absent_text += [str(call_args[0][0]), str(call_args[0][1])]
+
+        # what is the expected URL
+        expected_url = SLACK_URL
+        if url is None:
+            expected_url += "env"
+
         if on_entrance:
-            if url is None:
-                assert SLACK_URL + "env" in webhook_call_args_list[0][0]
-            else:
-                assert SLACK_URL in webhook_call_args_list[0][0]
-
-            test_text = webhook_call_args_list[0][1]['text']
-            assert 'call' in test_text
-            if additional_msg is not None:
-                assert additional_msg in test_text
-
-            assert 'test_func' in test_text
-
-            if include_host:
-                assert socket.gethostname() in test_text
-
+            assert expected_url == webhook_call_args_list[0][0][0]
+            notify_test_helper(webhook_call_args_list[0][1]['text'],
+                               required_text + ['call'],
+                               absent_text)
             del webhook_call_args_list[0]
 
         if on_exit:
-            if url is None:
-                assert SLACK_URL + "env" in webhook_call_args_list[0][0]
-            else:
-                assert SLACK_URL in webhook_call_args_list[0][0]
-
-            test_text = webhook_call_args_list[0][1]['text']
-            assert 'exit' in test_text
-            if additional_msg is not None:
-                assert additional_msg in test_text
-
-            assert 'test_func' in test_text
-
-            if include_host:
-                assert socket.gethostname() in test_text
+            assert expected_url == webhook_call_args_list[0][0][0]
+            notify_test_helper(webhook_call_args_list[0][1]['text'],
+                               required_text + ['exit'],
+                               absent_text)

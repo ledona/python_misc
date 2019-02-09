@@ -52,8 +52,9 @@ class SlackNotifyError(Exception):
     pass
 
 
-def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_requests_error=False,
-           on_entrance=True, on_exit=True, include_timing=True, include_host=True):
+def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_error=False,
+           on_entrance=True, on_exit=True, include_timing=True, include_host=True,
+           include_args=False):
     """
     decorator that sends a message to slack on func entrance/exit
 
@@ -65,10 +66,6 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_request
     assert (webhook_url is None) != (env_var is None), \
         "Either provide a url XOR an env_var"
 
-    if additional_msg is None:
-        additional_msg = ""
-    else:
-        additional_msg += " "
     url = webhook_url
     if url is None:
         if env_var not in os.environ:
@@ -76,45 +73,59 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_request
                              .format(env_var))
         url = os.environ[env_var]
 
+    msg_format = "" if additional_msg is None else additional_msg + " : "
+    if include_host:
+        msg_format += socket.gethostname() + " "
+    msg_format += "{stage} function {func}"
+    if include_timing:
+        msg_format += " at {dt}"
+    msg_format += "."
+    if include_args:
+        msg_format += "\nargs: {args}\nkwargs: {kwargs}"
+
     # actual decorator, paramaterized
     def dec_(func):
         @functools.wraps(func)
         def wrapper_notify(*args, **kwargs):
-            if include_timing:
-                start_dt = datetime.now()
+            start_dt = datetime.now() if include_timing else None
 
             if on_entrance:
-                msg = additional_msg
-                if include_host:
-                    msg += socket.gethostname() + " "
-                msg += "called function {}".format(func)
-                if include_timing:
-                    msg += " at {}".format(start_dt)
+                msg = msg_format.format(stage='called',
+                                        func=func,
+                                        dt=start_dt,
+                                        args=args,
+                                        kwargs=kwargs)
                 r = webhook(url, text=msg)
                 if r.status_code != 200:
-                    msg = "Non 200 response from Slack. {}".format(r)
+                    err_msg = "Non 200 response from Slack. {}".format(r)
                     if raise_on_requests_error:
-                        raise SlackNotifyError(msg, r)
+                        raise SlackNotifyError(err_msg, r)
                     else:
-                        warnings.warn(msg)
+                        warnings.warn(err_msg)
             try:
                 result = func(*args, **kwargs)
             finally:
                 if on_exit:
-                    msg = additional_msg
-                    if include_host:
-                        msg += socket.gethostname() + " "
-                    msg += "exited function {}".format(func)
+                    end_dt = datetime.now() if include_timing else None
+                    end_msg_format = msg_format
                     if include_timing:
                         end_dt = datetime.now()
-                        msg += " at {}. Elapsed time {}".format(end_dt, end_dt - start_dt)
+                        end_msg_format += " Elapsed time {}".format(end_dt - start_dt)
+                    else:
+                        end_dt = None
+
+                    msg = end_msg_format.format(stage='exited',
+                                                func=func,
+                                                dt=end_dt,
+                                                args=args,
+                                                kwargs=kwargs)
                     r = webhook(url, text=msg)
                     if r.status_code != 200:
-                        msg = "Non 200 response from Slack. {}".format(r)
+                        err_msg = "Non 200 response from Slack. {}".format(r)
                         if raise_on_requests_error:
-                            raise SlackNotifyError(msg, r)
+                            raise SlackNotifyError(err_msg, r)
                         else:
-                            warnings.warn(msg)
+                            warnings.warn(err_msg)
             return result
 
         return wrapper_notify
