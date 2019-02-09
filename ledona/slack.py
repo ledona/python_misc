@@ -1,3 +1,4 @@
+import argparse
 import requests
 import json
 import functools
@@ -139,4 +140,11 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
 
 
 if __name__ == "__main__":
-    raise NotImplementedError("Command line use not yet implemented")
+    parser = argparse.ArgumentParser(description="Send a message to slack")
+    parser.add_argument("--url", metavar="WEBHOOK_URL", default=os.environ['FANTASY_SLACK_WEBHOOK_URL'],
+                        help=("Default is value of environment variable FANTASY_SLACK_WEBHOOK_URL, "
+                              "now set to '{}'").format(os.environ['FANTASY_SLACK_WEBHOOK_URL']))
+    parser.add_argument("msg")
+    args = parser.parse_args()
+
+    webhook(args.url, text=args.msg)
