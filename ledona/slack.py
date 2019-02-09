@@ -109,8 +109,13 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
                         raise SlackNotifyError(err_msg, r)
                     else:
                         warnings.warn(err_msg)
+
+            func_exception = None
             try:
                 result = func(*args, **kwargs)
+            except Exception as ex:
+                func_exception = ex
+                raise
             finally:
                 if on_exit:
                     end_dt = datetime.now() if include_timing else None
@@ -122,14 +127,19 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
                     else:
                         end_dt = None
 
+                    stage = "exited " + ("successfully" if func_exception is None else "with an exception")
                     msg = end_msg_format.format(
-                        stage='exited',
+                        stage=stage,
                         func=func,
                         dt=end_dt.strftime("%Y-%m-%d %H:%M:%S") if end_dt is not None else None,
                         args=args,
                         kwargs=kwargs)
-                    if include_return:
+                    if func_exception is not None:
+                        import traceback
+                        msg += "\n" + traceback.format_exc()
+                    elif include_return:
                         msg += "\nReturned: {}".format(result)
+
                     r = webhook(url, text=msg)
                     if r.status_code != 200:
                         err_msg = "Non 200 response from Slack. {}".format(r)
