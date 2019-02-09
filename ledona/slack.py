@@ -55,7 +55,7 @@ class SlackNotifyError(Exception):
 
 def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_error=False,
            on_entrance=True, on_exit=True, include_timing=True, include_host=True,
-           include_args=False, include_return=False):
+           include_args=False, include_return=False, include_funcname=True):
     """
     decorator that sends a message to slack on func entrance/exit
 
@@ -79,10 +79,12 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
 
     msg_format = "" if additional_msg is None else additional_msg + " : "
     if include_host:
-        msg_format += socket.gethostname() + " "
-    msg_format += "{stage} function {func}"
+        msg_format += "host " + socket.gethostname() + " "
+    msg_format += "{stage} "
+    if include_funcname:
+        msg_format += "function {func}"
     if include_timing:
-        msg_format += " at {dt}"
+        msg_format += "at {dt}"
     msg_format += "."
     if include_args:
         msg_format += "\nargs: {args}\nkwargs: {kwargs}"
@@ -94,11 +96,12 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
             start_dt = datetime.now() if include_timing else None
 
             if on_entrance:
-                msg = msg_format.format(stage='called',
-                                        func=func,
-                                        dt=start_dt,
-                                        args=args,
-                                        kwargs=kwargs)
+                msg = msg_format.format(
+                    stage='started',
+                    func=func,
+                    dt=start_dt.strftime("%Y-%m-%d %H:%M:%S") if start_dt is not None else None,
+                    args=args,
+                    kwargs=kwargs)
                 r = webhook(url, text=msg)
                 if r.status_code != 200:
                     err_msg = "Non 200 response from Slack. {}".format(r)
@@ -114,15 +117,17 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
                     end_msg_format = msg_format
                     if include_timing:
                         end_dt = datetime.now()
-                        end_msg_format += " Elapsed time {}".format(end_dt - start_dt)
+                        end_msg_format += " Elapsed time {}".format(
+                            str(end_dt - start_dt).split('.')[0])
                     else:
                         end_dt = None
 
-                    msg = end_msg_format.format(stage='exited',
-                                                func=func,
-                                                dt=end_dt,
-                                                args=args,
-                                                kwargs=kwargs)
+                    msg = end_msg_format.format(
+                        stage='exited',
+                        func=func,
+                        dt=end_dt.strftime("%Y-%m-%d %H:%M:%S") if end_dt is not None else None,
+                        args=args,
+                        kwargs=kwargs)
                     if include_return:
                         msg += "\nReturned: {}".format(result)
                     r = webhook(url, text=msg)

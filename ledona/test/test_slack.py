@@ -118,7 +118,7 @@ def test_decorator_simple_w_url(url, env_var, additional_msg,
         if on_entrance:
             assert expected_url == webhook_call_args_list[0][0][0]
             notify_test_helper(webhook_call_args_list[0][1]['text'],
-                               required_text + ['call'],
+                               required_text + ['start'],
                                absent_text + [return_value_as_str])
             del webhook_call_args_list[0]
 
