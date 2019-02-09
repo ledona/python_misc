@@ -113,7 +113,7 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
                     args_text=args_text,
                     kwargs=kwargs)
                 r = webhook(url, text=msg)
-                if r.status_code != 200:
+                if is_enabled() and r.status_code != 200:
                     err_msg = "Non 200 response from Slack. {}".format(r)
                     if raise_on_requests_error:
                         raise SlackNotifyError(err_msg, r)
