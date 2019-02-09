@@ -63,6 +63,7 @@ def notify_test_helper(msg, required_present_text, required_absent_text):
      (SLACK_URL, None, None, True, False, True, False, False, False),
      (SLACK_URL, None, 'additional text', True, True, True, True, False, False),
      (None, "ENV_VAR", 'additional text', True, True, True, True, True, False),
+     (None, "ENV_VAR", 'additional text', True, True, True, True, "args_func", False),
     ]
 )
 def test_decorator_simple_w_url(url, env_var, additional_msg,
@@ -78,6 +79,14 @@ def test_decorator_simple_w_url(url, env_var, additional_msg,
 
         call_args = []
         return_value = {'tanis': 'there are wonderous things'}
+
+        if include_args == "args_func":
+            ARGS_FUNC_RESPONSE = "args_func_response"
+            args_func_call_args = []
+            def args_func(*args, **kwargs):
+                args_func_call_args.append((args, kwargs))
+                return ARGS_FUNC_RESPONSE
+            include_args = args_func
 
         @slack.notify(webhook_url=url, env_var=env_var, additional_msg=additional_msg,
                       on_entrance=on_entrance, on_exit=on_exit, include_args=include_args,
@@ -104,10 +113,14 @@ def test_decorator_simple_w_url(url, env_var, additional_msg,
             absent_text.append(host_name)
         if additional_msg is not None:
             required_text.append(additional_msg)
-        if include_args:
+        if include_args is True:
             required_text += [str(call_args[0][0]), str(call_args[0][1])]
-        else:
+        elif include_args is False:
             absent_text += [str(call_args[0][0]), str(call_args[0][1])]
+        else:
+            # must be a callable
+            assert call_args == args_func_call_args
+            required_text.append(ARGS_FUNC_RESPONSE)
 
         # what is the expected URL
         expected_url = SLACK_URL

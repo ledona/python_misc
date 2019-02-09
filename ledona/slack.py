@@ -62,6 +62,9 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
     raise_on_requests_error - If true then an exception is raised if the http response is not success
       if false, then a warning will be issued
     include_return - include the return value in the exit message. Only matters if on_exit is true
+    include_args - True will include a stringified version of args in the notifications, if set to
+      a callable, then the function will be called with the args, and the returned string will be
+      included in the message
     """
     assert on_entrance or on_exit, \
         "Nothing to do, both on_exit and on_entrance are False"
@@ -86,13 +89,20 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
     if include_timing:
         msg_format += "at {dt}"
     msg_format += "."
-    if include_args:
-        msg_format += "\nargs: {args}\nkwargs: {kwargs}"
+    if include_args is not False:
+        msg_format += "{args_text}"
 
     # actual decorator, paramaterized
     def dec_(func):
         @functools.wraps(func)
         def wrapper_notify(*args, **kwargs):
+            if callable(include_args):
+                args_text = "\n" + include_args(*args, **kwargs)
+            elif include_args is True:
+                args_text = "\nargs: {}\nkwargs: {}".format(args, kwargs)
+            else:
+                args_text = None
+
             start_dt = datetime.now() if include_timing else None
 
             if on_entrance:
@@ -100,7 +110,7 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
                     stage='started',
                     func=func,
                     dt=start_dt.strftime("%Y-%m-%d %H:%M:%S") if start_dt is not None else None,
-                    args=args,
+                    args_text=args_text,
                     kwargs=kwargs)
                 r = webhook(url, text=msg)
                 if r.status_code != 200:
@@ -132,7 +142,7 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
                         stage=stage,
                         func=func,
                         dt=end_dt.strftime("%Y-%m-%d %H:%M:%S") if end_dt is not None else None,
-                        args=args,
+                        args_text=args_text,
                         kwargs=kwargs)
                     if func_exception is not None:
                         import traceback
