@@ -54,17 +54,20 @@ class SlackNotifyError(Exception):
 
 def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_error=False,
            on_entrance=True, on_exit=True, include_timing=True, include_host=True,
-           include_args=False):
+           include_args=False, include_return=False):
     """
     decorator that sends a message to slack on func entrance/exit
 
     raise_on_requests_error - If true then an exception is raised if the http response is not success
       if false, then a warning will be issued
+    include_return - include the return value in the exit message. Only matters if on_exit is true
     """
     assert on_entrance or on_exit, \
         "Nothing to do, both on_exit and on_entrance are False"
     assert (webhook_url is None) != (env_var is None), \
         "Either provide a url XOR an env_var"
+    assert not (include_return and not on_exit), \
+        "include return should not be true if on_exit is false"
 
     url = webhook_url
     if url is None:
@@ -119,6 +122,8 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
                                                 dt=end_dt,
                                                 args=args,
                                                 kwargs=kwargs)
+                    if include_return:
+                        msg += "\nReturned: {}".format(result)
                     r = webhook(url, text=msg)
                     if r.status_code != 200:
                         err_msg = "Non 200 response from Slack. {}".format(r)

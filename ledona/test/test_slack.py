@@ -57,17 +57,17 @@ def notify_test_helper(msg, required_present_text, required_absent_text):
 
 
 @pytest.mark.parametrize(
-    "url,env_var,additional_msg,on_entrance,on_exit,include_timing,include_host,include_args",
-    [(SLACK_URL, None, None, True, True, True, True, True),
-     (SLACK_URL, None, None, False, True, True, True, False),
-     (SLACK_URL, None, None, True, False, True, False, False),
-     (SLACK_URL, None, 'additional text', True, True, True, True, False),
-     (None, "ENV_VAR", 'additional text', True, True, True, True, True),
+    "url,env_var,additional_msg,on_entrance,on_exit,include_timing,include_host,include_args,include_return",
+    [(SLACK_URL, None, None, True, True, True, True, True, True),
+     (SLACK_URL, None, None, False, True, True, True, False, True),
+     (SLACK_URL, None, None, True, False, True, False, False, False),
+     (SLACK_URL, None, 'additional text', True, True, True, True, False, False),
+     (None, "ENV_VAR", 'additional text', True, True, True, True, True, False),
     ]
 )
 def test_decorator_simple_w_url(url, env_var, additional_msg,
                                 on_entrance, on_exit, include_timing, include_host,
-                                include_args):
+                                include_args, include_return):
     """ some minimal testing of notify decorator """
     with ExitStack() as stack:
         mock_webhook = stack.enter_context(patch("ledona.slack.webhook"))
@@ -77,12 +77,15 @@ def test_decorator_simple_w_url(url, env_var, additional_msg,
                                            {env_var: SLACK_URL + "env"}))
 
         call_args = []
+        return_value = {'tanis': 'there are wonderous things'}
 
         @slack.notify(webhook_url=url, env_var=env_var, additional_msg=additional_msg,
                       on_entrance=on_entrance, on_exit=on_exit, include_args=include_args,
-                      include_timing=include_timing, include_host=include_host)
+                      include_timing=include_timing, include_host=include_host,
+                      include_return=include_return)
         def test_func(a, b, c=None, d=None):
             call_args.append(((a, b), {'c': c, 'd': d}))
+            return return_value
 
         test_func(1, 2, c='x', d='y')
 
@@ -111,15 +114,22 @@ def test_decorator_simple_w_url(url, env_var, additional_msg,
         if url is None:
             expected_url += "env"
 
+        return_value_as_str = str(return_value)
         if on_entrance:
             assert expected_url == webhook_call_args_list[0][0][0]
             notify_test_helper(webhook_call_args_list[0][1]['text'],
                                required_text + ['call'],
-                               absent_text)
+                               absent_text + [return_value_as_str])
             del webhook_call_args_list[0]
 
         if on_exit:
             assert expected_url == webhook_call_args_list[0][0][0]
+            req = required_text + ['exit']
+            absent = absent_text
+            if include_return:
+                req.append(return_value_as_str)
+            else:
+                absent += [return_value_as_str]
+
             notify_test_helper(webhook_call_args_list[0][1]['text'],
-                               required_text + ['exit'],
-                               absent_text)
+                               req, absent)
