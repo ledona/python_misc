@@ -136,3 +136,7 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
         return wrapper_notify
 
     return dec_
+
+
+if __name__ == "__main__":
+    raise NotImplementedError("Command line use not yet implemented")
