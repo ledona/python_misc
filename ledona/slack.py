@@ -91,17 +91,15 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
     msg_format += "."
     if include_args is not False:
         msg_format += "{args_text}"
+        # substitute a lambda function for the true value of include_args
+        if include_args is True:
+            include_args = lambda *args, **kwargs: "\nargs: {}\nkwargs: {}".format(args, kwargs)
 
     # actual decorator, paramaterized
     def dec_(func):
         @functools.wraps(func)
         def wrapper_notify(*args, **kwargs):
-            if callable(include_args):
-                args_text = "\n" + include_args(*args, **kwargs)
-            elif include_args is True:
-                args_text = "\nargs: {}\nkwargs: {}".format(args, kwargs)
-            else:
-                args_text = None
+            args_text = "\n" + include_args(*args, **kwargs) if callable(include_args) else None
 
             start_dt = datetime.now() if include_timing else None
 
