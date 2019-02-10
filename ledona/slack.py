@@ -125,9 +125,10 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
                         warnings.warn(err_msg)
 
             func_exception = None
+            result = None
             try:
                 result = func(*args, **kwargs)
-            except Exception as ex:
+            except BaseException as ex:
                 func_exception = ex
                 raise
             finally:
