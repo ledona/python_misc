@@ -61,7 +61,7 @@ def notify_test_helper(msg, required_present_text, required_absent_text):
     [(SLACK_URL, None, None, True, True, True, True, True, True),
      (SLACK_URL, None, None, False, True, True, True, False, True),
      (SLACK_URL, None, None, True, False, True, False, False, False),
-     (SLACK_URL, None, 'additional text', True, True, True, True, False, False),
+     (SLACK_URL, None, 'additional text', True, True, True, True, False, 'return_func'),
      (None, "ENV_VAR", 'additional text', True, True, True, True, True, False),
      (None, "ENV_VAR", 'additional text', True, True, True, True, "args_func", False),
     ]
@@ -87,6 +87,14 @@ def test_decorator_simple_w_url(url, env_var, additional_msg,
                 args_func_call_args.append((args, kwargs))
                 return ARGS_FUNC_RESPONSE
             include_args = args_func
+
+        if include_return == 'return_func':
+            RETURN_FUNC_RESPONSE = "return_func_response"
+            return_func_call_args = []
+            def return_func(return_value):
+                return_func_call_args.append(return_value)
+                return RETURN_FUNC_RESPONSE
+            include_return = return_func
 
         @slack.notify(webhook_url=url, env_var=env_var, additional_msg=additional_msg,
                       on_entrance=on_entrance, on_exit=on_exit, include_args=include_args,
@@ -139,8 +147,11 @@ def test_decorator_simple_w_url(url, env_var, additional_msg,
             assert expected_url == webhook_call_args_list[0][0][0]
             req = required_text + ['exit']
             absent = absent_text
-            if include_return:
+            if include_return is True:
                 req.append(return_value_as_str)
+            elif callable(include_return):
+                assert return_value in return_func_call_args
+                req.append(RETURN_FUNC_RESPONSE)
             else:
                 absent += [return_value_as_str]
 

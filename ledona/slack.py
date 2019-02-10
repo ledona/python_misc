@@ -61,7 +61,9 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
 
     raise_on_requests_error - If true then an exception is raised if the http response is not success
       if false, then a warning will be issued
-    include_return - include the return value in the exit message. Only matters if on_exit is true
+    include_return - If True include the return value in the exit message.
+      Only matters if on_exit is true.. Can also be a callable that takes the return value
+      and returns a string to include in the message
     include_args - True will include a stringified version of args in the notifications, if set to
       a callable, then the function will be called with the args, and the returned string will be
       included in the message
@@ -90,10 +92,14 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
         msg_format += "at {dt}"
     msg_format += "."
     if include_args is not False:
-        msg_format += "{args_text}"
+        msg_format += "\n{args_text}"
         # substitute a lambda function for the true value of include_args
         if include_args is True:
-            include_args = lambda *args, **kwargs: "\nargs: {}\nkwargs: {}".format(args, kwargs)
+            include_args = lambda *args, **kwargs: "args: {}\nkwargs: {}".format(args, kwargs)
+
+    if include_return is True:
+        # substitute a simple lambda for the True value of include_return
+        include_return = lambda ret: "Returned: {}".format(ret)
 
     # actual decorator, paramaterized
     def dec_(func):
@@ -130,7 +136,7 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
                     end_msg_format = msg_format
                     if include_timing:
                         end_dt = datetime.now()
-                        end_msg_format += " Elapsed time {}".format(
+                        end_msg_format += "\nElapsed time {}".format(
                             str(end_dt - start_dt).split('.')[0])
                     else:
                         end_dt = None
@@ -145,8 +151,8 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
                     if func_exception is not None:
                         import traceback
                         msg += "\n" + traceback.format_exc()
-                    elif include_return:
-                        msg += "\nReturned: {}".format(result)
+                    elif include_return is not False:
+                        msg += "\n{}".format(include_return(result))
 
                     r = webhook(url, text=msg)
                     if r != 'disabled' and r.status_code != 200:
