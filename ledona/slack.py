@@ -84,22 +84,22 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
 
     msg_format = "" if additional_msg is None else additional_msg + " : "
     if include_host:
-        msg_format += "host " + socket.gethostname() + " "
+        msg_format += "host _" + socket.gethostname() + "_ "
     msg_format += "{stage} "
     if include_funcname:
-        msg_format += "function {func}"
+        msg_format += "function `{func}`"
     if include_timing:
-        msg_format += "at {dt}"
+        msg_format += "at _{dt}_"
     msg_format += "."
     if include_args is not False:
         msg_format += "\n{args_text}"
         # substitute a lambda function for the true value of include_args
         if include_args is True:
-            include_args = lambda *args, **kwargs: "args: {}\nkwargs: {}".format(args, kwargs)
+            include_args = lambda *args, **kwargs: "args: _{}_\nkwargs: _{}_".format(args, kwargs)
 
     if include_return is True:
         # substitute a simple lambda for the True value of include_return
-        include_return = lambda ret: "Returned: {}".format(ret)
+        include_return = lambda ret: "Returned: _{}_".format(ret)
 
     # actual decorator, paramaterized
     def dec_(func):
