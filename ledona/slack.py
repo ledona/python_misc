@@ -105,7 +105,8 @@ def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_er
     def dec_(func):
         @functools.wraps(func)
         def wrapper_notify(*args, **kwargs):
-            args_text = "\n" + include_args(*args, **kwargs) if callable(include_args) else None
+            args_text = ("\n" + (include_args(*args, **kwargs) or "")
+                         if callable(include_args) else None)
 
             start_dt = datetime.now() if include_timing else None
 
