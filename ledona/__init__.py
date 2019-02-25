@@ -11,19 +11,15 @@ from .json import make_json_compatible
 
 def process_timer(timed_func):
     """
-    decorator that prints the running time for the function it decorates. disabled when
-    nose is being run
+    decorator that prints the running time for the function it decorates.
     """
-    if 'nose' not in sys.modules.keys():
-        def wrapper(*args, **kwargs):
-            _start = time.perf_counter()
-            try:
-                result = timed_func(*args, **kwargs)
-            finally:
-                print("{} secs elapsed".format(round(time.perf_counter() - _start, 5)),
-                      file=sys.stderr)
-            return result
+    def wrapper(*args, **kwargs):
+        _start = time.perf_counter()
+        try:
+            result = timed_func(*args, **kwargs)
+        finally:
+            print("{} secs elapsed".format(round(time.perf_counter() - _start, 5)),
+                  file=sys.stderr)
+        return result
 
-        return wrapper
-    else:
-        return timed_func
+    return wrapper
