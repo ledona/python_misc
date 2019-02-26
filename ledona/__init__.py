@@ -1,5 +1,6 @@
 import sys
 import time
+import argparse
 
 from . import sqlalchemy
 from .attribute_object import AttributeObject
@@ -23,3 +24,19 @@ def process_timer(timed_func):
         return result
 
     return wrapper
+
+
+class ArgumentDefaultsHelpNoNoneFormatter(argparse.HelpFormatter):
+    """
+    Add the default for an argument to its help if the default is not None
+    Based on the implementation of argparse.ArgumentDefaultsHelpNoNoneFormatter
+    """
+
+    def _get_help_string(self, action):
+        help = action.help
+        if '%(default)' not in action.help:
+            if action.default not in (argparse.SUPPRESS, None):
+                defaulting_nargs = [argparse.OPTIONAL, argparse.ZERO_OR_MORE]
+                if action.option_strings or action.nargs in defaulting_nargs:
+                    help += ' (default: %(default)s)'
+        return help
