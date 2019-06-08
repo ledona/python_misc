@@ -16,8 +16,8 @@ class AttributeObject(argparse.Namespace):
         setattr(self, key, value)
 
     def __hash__(self):
-        raise NotImplementedError()
-        return hash(flatten_dict_to_frozensets(vars(self)))
+        """ default implementation assumes a dict where keys and values are hashable """
+        return hash(tuple(vars(self)))
 
     def __len__(self):
         return len(vars(self))
