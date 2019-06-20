@@ -53,11 +53,12 @@ class SlackNotifyError(Exception):
     pass
 
 
-def notify(webhook_url=None, env_var=None, additional_msg=None, raise_on_http_error=False,
+def notify(*args,
+           webhook_url=None, env_var=None, additional_msg=None, raise_on_http_error=False,
            on_entrance=True, on_exit=True, include_timing=True, include_host=True,
            include_args=False, include_return=False, include_funcname=True):
     """
-    decorator that sends a message to slack on func entrance/exit
+    Decorator that sends a message to slack on func entrance/exit
 
     raise_on_requests_error - If true then an exception is raised if the http response is not success
       if false, then a warning will be issued
