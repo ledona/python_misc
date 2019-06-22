@@ -1,8 +1,9 @@
 from contextlib import contextmanager
+import os
+
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
-import os
 
 
 # make sure that foreign keys are enforced
@@ -39,7 +40,7 @@ def after_cursor_execute(conn, cursor, statement,
 """
 
 
-class SQLAlchemyWrapper(object):
+class SQLAlchemyWrapper:
     """
     Lightweight wrapper for SQL Alchemy DB access. The db object's associated DBManager
     is available at the db_manager property. This is not available for new DBs until the
