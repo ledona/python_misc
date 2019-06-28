@@ -4,6 +4,10 @@ import pandas
 
 
 def deep_compare(first, second, msg=None, assert_tests=True) -> bool:
+    """
+    return - true if the first and second args are comparable
+    raises - AssertionError is assert_tests is True and the first and second args are not equivalent
+    """
     if not __debug__ and assert_tests is True:
         raise ValueError("assert_tests cannot be true in optimized/non debug mode")
 
@@ -28,6 +32,8 @@ def deep_compare(first, second, msg=None, assert_tests=True) -> bool:
                 raise
             else:
                 return False
+
+    return True
 
 
 def compare_dataframes(df1, df2, cols=None, msg=None, assert_tests=True):
