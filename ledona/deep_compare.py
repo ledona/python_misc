@@ -1,5 +1,3 @@
-from collections import namedtuple
-
 import pandas
 
 
@@ -12,7 +10,7 @@ def deep_compare(first, second, msg=None, assert_tests=True) -> bool:
         raise ValueError("assert_tests cannot be true in optimized/non debug mode")
 
     if type(first) == pandas.DataFrame:
-        return compare_dataframes(first, second, msg=ms, assert_tests=assert_tests)
+        return compare_dataframes(first, second, msg=msg, assert_tests=assert_tests)
     elif hasattr(first, '__dict__'):
         return deep_compare_objs(first, second, msg=(msg or ""), assert_tests=assert_tests)
     elif hasattr(first, '_fields'):

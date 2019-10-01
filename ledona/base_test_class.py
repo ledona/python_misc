@@ -61,7 +61,7 @@ class BaseTestClass(unittest.TestCase):
         """
         if type(first) == pandas.DataFrame and type(second) == pandas.DataFrame:
             return self.assertDataFrameEqual(first, second, msg=msg)
-        elif isinstance(first, (Mock, MagicMock, AttributeObject)):
+        elif isinstance(first, (MagicMock, AttributeObject)):
             return self.compare_obj_obj(first, second, first.keys(), msg=(msg or ""))
         elif type(first) == dict and type(second) == dict:
             self.assertEqual(set(first.keys()), set(second.keys()), msg)

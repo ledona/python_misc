@@ -144,7 +144,7 @@ class SQLAlchemyWrapper:
 
 
 def get_db_obj(path_to_db_file=None, verbose=False, sqlalchemy_wrapper=SQLAlchemyWrapper,
-               do_not_create=True):
+               do_not_create=True) -> SQLAlchemyWrapper:
     """
     do_not_create: if True and there is not already a file at path_to_db_file then raise
       FileNotFoundError, By default do not create a new DB
