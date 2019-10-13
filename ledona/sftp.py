@@ -1,6 +1,8 @@
 from contextlib import contextmanager
-import paramiko
 import os
+
+import paramiko
+
 
 _DEFAULT_SSH_PATH = os.path.expanduser(os.path.join("~", ".ssh"))
 _DEFAULT_SSH_CONFIG_PATH = os.path.join(_DEFAULT_SSH_PATH, "config")
@@ -9,7 +11,8 @@ _DEFAULT_SSH_PKEY_PATH = os.path.join(_DEFAULT_SSH_PATH, "id_rsa")
 
 @contextmanager
 def connect(connection_str=None, hostname=None, username=None, port=None, password=None,
-            ssh_config_filepath=_DEFAULT_SSH_CONFIG_PATH, pkey_filepath=_DEFAULT_SSH_PKEY_PATH):
+            ssh_config_filepath=_DEFAULT_SSH_CONFIG_PATH,
+            pkey_filepath=_DEFAULT_SSH_PKEY_PATH, pkey_password=None):
     """
     Context manager that yields a paramiko sftp client object, if connection_str is given then
     username and password are ignored.
@@ -17,6 +20,7 @@ def connect(connection_str=None, hostname=None, username=None, port=None, passwo
     ssh_config_filepath: default to ~/.ssh/config, set to None for no config
     pkey_filepath: default to ~/.ssh/pkey, set to None for no pkey
     connection_str: [user@]host[:port]
+    pkey_password: if not none that use this password for the private key
 
     yields: a paramiko sftp client object
     """
@@ -53,7 +57,7 @@ def connect(connection_str=None, hostname=None, username=None, port=None, passwo
     if port is None:
         port = 22
 
-    mykey = (paramiko.RSAKey.from_private_key_file(pkey_filepath)
+    mykey = (paramiko.RSAKey.from_private_key_file(pkey_filepath, password=pkey_password)
              if pkey_filepath is not None else None)
 
     transport = paramiko.Transport((hostname, port))
