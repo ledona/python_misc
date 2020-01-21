@@ -1,3 +1,5 @@
+from typing import Optional, Iterable
+
 import pandas
 
 
@@ -34,12 +36,33 @@ def deep_compare(first, second, msg=None, assert_tests=True) -> bool:
     return True
 
 
-def compare_dataframes(df1, df2, cols=None, msg=None, assert_tests=True):
+def compare_dataframes(df1: pandas.DataFrame, df2: pandas.DataFrame,
+                       cols: Optional[Iterable[str]] = None,
+                       msg: Optional[str] = None,
+                       ignore_col_order: bool = False,
+                       ignore_row_order: bool = True,
+                       ignore_index: bool = False,
+                       assert_tests: bool = True) -> bool:
+    """
+    compare 2 dataframes, column types must match, expect an error with 'dtype' are different
+    if column types don't match
+
+    ignore_index - if true then dataframe indices will be reset, and the old index will be
+       dropped before comparing
+    ignore_col_order - if True then the order of the columns must match
+    ignore_row_order - if true then both dataframes will be sorted before comparison
+    cols - Only compare these columns of data, otherwise both dataframes must have the same
+       columns
+    assert_tests - if an internal comparison fails then raise an AssertionError (this allows for the
+                   specific inequality to be surfaced)
+    returns - true if they are equivalent, false if not (if assert_tests is True then an inequality will
+              result in an AssertionError instead of a returned False)
+    """
     if not __debug__ and assert_tests is True:
         raise ValueError("assert_tests cannot be true in optimized/non debug mode")
 
-    assert type(df1) == pandas.DataFrame
-    assert type(df2) == pandas.DataFrame
+    assert isinstance(df1, pandas.DataFrame)
+    assert isinstance(df2, pandas.DataFrame)
 
     if cols is not None:
         # trim the result to the columns to test
@@ -51,13 +74,23 @@ def compare_dataframes(df1, df2, cols=None, msg=None, assert_tests=True):
             if col_name not in cols:
                 df2 = df2.drop(col_name, 1)
 
+    if ignore_col_order is True:
+        # sort both by column name
+        df1 = df1[sorted(df1.columns)]
+        df2 = df2[sorted(df2.columns)]
+
+    # sort the dataframes
+    if ignore_row_order is True:
+        df1 = df1.reindex(sorted(df1.columns), axis=1)
+        df2 = df2.reindex(sorted(df2.columns), axis=1)
+
+    if ignore_index is True:
+        df1 = df1.reset_index(drop=True)
+        df2 = df2.reset_index(drop=True)
+
     try:
         assert df1.columns.tolist() == df2.columns.tolist(), \
             ((msg + " :: ") if msg is not None else "") + "column names don't match"
-
-        # sort the dataframes
-        df1 = df1.reindex(sorted(df1.columns), axis=1)
-        df2 = df2.reindex(sorted(df2.columns), axis=1)
 
         pandas.util.testing.assert_frame_equal(df1, df2, check_names=True, obj=msg)
     except AssertionError:
