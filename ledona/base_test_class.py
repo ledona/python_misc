@@ -1,8 +1,6 @@
 import unittest
-from unittest.mock import Mock, MagicMock
+from unittest.mock import MagicMock
 import pandas
-
-from .attribute_object import AttributeObject
 
 
 # TODO: somehow merge this with deep_compare
@@ -61,7 +59,7 @@ class BaseTestClass(unittest.TestCase):
         """
         if type(first) == pandas.DataFrame and type(second) == pandas.DataFrame:
             return self.assertDataFrameEqual(first, second, msg=msg)
-        elif isinstance(first, (MagicMock, AttributeObject)):
+        elif isinstance(first, MagicMock):
             return self.compare_obj_obj(first, second, first.keys(), msg=(msg or ""))
         elif type(first) == dict and type(second) == dict:
             self.assertEqual(set(first.keys()), set(second.keys()), msg)

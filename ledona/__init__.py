@@ -4,7 +4,6 @@ import argparse
 from datetime import timedelta
 
 from . import sqlalchemy
-from .attribute_object import AttributeObject
 from .base_test_class import BaseTestClass
 from .deep_compare import (deep_compare, deep_compare_dicts, deep_compare_objs,
                            compare_dataframes, deep_compare_ordered_collections)
