@@ -1,4 +1,5 @@
 from typing import Optional, Iterable
+from enum import Enum
 
 import pandas
 
@@ -11,15 +12,15 @@ def deep_compare(first, second, msg=None, assert_tests=True) -> bool:
     if not __debug__ and assert_tests is True:
         raise ValueError("assert_tests cannot be true in optimized/non debug mode")
 
-    if type(first) == pandas.DataFrame:
+    if isinstance(first, pandas.DataFrame):
         return compare_dataframes(first, second, msg=msg, assert_tests=assert_tests)
-    elif hasattr(first, '__dict__'):
+    elif hasattr(first, '__dict__') and not isinstance(first, Enum):
         return deep_compare_objs(first, second, msg=(msg or ""), assert_tests=assert_tests)
     elif hasattr(first, '_fields'):
         # must be a named tuple...
         return deep_compare_objs(first, second, attr_names=first._fields, msg=(msg or ""),
                                  assert_tests=assert_tests)
-    elif type(first) == dict:
+    elif isinstance(first, dict):
         return deep_compare_dicts(first, second, msg=(msg or ""), assert_tests=assert_tests)
     elif isinstance(first, (list, tuple)):
         deep_compare_ordered_collections(first, second, msg=(msg or ""),
