@@ -5,9 +5,6 @@ oauth2client
 # for base_test_class
 pandas
 
-# for sftp
-paramiko
-
 # for slack
 requests
 
