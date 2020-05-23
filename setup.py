@@ -13,7 +13,5 @@ setup(
 
         # for base test class
         'pandas',
-
-        # for sftp
-        'paramiko')
+    )
 )
