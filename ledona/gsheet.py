@@ -2,21 +2,21 @@
 read and write to google sheets
 """
 
-import httplib2
-import os
-import argparse
 from pprint import pprint
+import argparse
+import os
+import pickle
 
-from apiclient import discovery
-from oauth2client import client
-from oauth2client import tools
-from oauth2client.file import Storage
+from googleapiclient.discovery import build
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
 
 
-_SCOPES = ['https://www.googleapis.com/auth/drive']
+SCOPES = ['https://www.googleapis.com/auth/drive',
+          'https://www.googleapis.com/auth/spreadsheets']
 
 
-class GSheetManager(object):
+class GSheetManager:
     """
     Some limited functionality for managing google drive and updating google sheets
     """
@@ -46,26 +46,38 @@ class GSheetManager(object):
 
         if credential_path is None:
             home_dir = os.path.expanduser('~')
-            credential_dir = os.path.join(home_dir, '.credentials')
+            credential_dir = os.path.join(home_dir, '.google-credentials')
             if not os.path.exists(credential_dir):
                 os.makedirs(credential_dir)
-            credential_path = os.path.join(credential_dir, 'googleapis.com-python.json')
 
-        store = Storage(credential_path)
-        credentials = store.get()
-        if reset_creds or not credentials or credentials.invalid:
-            flow = client.flow_from_clientsecrets(secret_file, _SCOPES)
-            flow.user_agent = app_name
-            credentials = tools.run_flow(flow, store, run_flow_flags)
+        # https://developers.google.com/sheets/api/quickstart/python
+        # The file token.pickle stores the user's access and refresh tokens, and is
+        # created automatically when the authorization flow completes for the first
+        # time.
+        token_path = os.path.join(credential_dir, 'token.pickle')
+        creds = None
+        if os.path.exists(token_path):
+            with open(token_path, 'rb') as token:
+                creds = pickle.load(token)
+        # If there are no (valid) credentials available, let the user log in.
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    os.path.join(credential_dir, 'credentials.json'), SCOPES)
+                creds = flow.run_local_server(port=0)
+            # Save the credentials for the next run
+            with open(token_path, 'wb') as token:
+                pickle.dump(creds, token)
 
-            if self.verbose:
-                print('Storing credentials to ' + credential_path)
-        self._credentials = credentials
+        self._credentials = creds
 
     @staticmethod
     def get_service(name, version, credentials):
-        http = credentials.authorize(httplib2.Http())
-        service = discovery.build(name, version, http=http)
+        service = build(name, version,
+                        credentials=credentials,
+                        cache_discovery=False)
         return service
 
     @classmethod
@@ -325,9 +337,6 @@ class GSheetManager(object):
         return response
 
 
-BASE_ARGPARSER = argparse.ArgumentParser(parents=[tools.argparser], add_help=False)
-
-
 def _update_sheet(manager, sheet_id, _range, csv_str, major_dim, append, respond):
     """ parser the csv string and then call the manager """
     data = []
@@ -338,7 +347,7 @@ def _update_sheet(manager, sheet_id, _range, csv_str, major_dim, append, respond
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(parents=[BASE_ARGPARSER])
+    parser = argparse.ArgumentParser()
     parser.add_argument('--app_name', default="TEST", help="default = TEST")
     parser.add_argument('--reset_creds', default=False, action="store_true",
                         help="Reset all previously granted credentials")
