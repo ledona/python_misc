@@ -17,6 +17,8 @@ def ssh_execute(connect: str, remote_cmd: str) -> str:
     connect - ssh connection string. i.e. run f"ssh {connect} {cmd}"
     cmd - command to run on remote
     returns - stdout as a string
+
+    raises CalledProcessError if there is an error running ssh
     """
     LOGGER.info("Running: %s %s", connect, remote_cmd)
     completed_process = run(f"ssh {connect} {remote_cmd}",
@@ -44,6 +46,8 @@ def scp(src_path: str, dest_path: str):
     """
     copy file from source_path to dest_path using scp. Will run f"scp {source_path} {dest_path}"
     Make sure that whichever path is remote looks like {REMOTE_HOST}:path
+
+    raises CalledProcessError if there is an error running scp
     """
     completed_process = run(f"scp {src_path} {dest_path}",
                             shell=True,
