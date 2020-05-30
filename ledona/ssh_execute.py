@@ -21,11 +21,16 @@ def ssh_execute(connect: str, remote_cmd: str) -> str:
     raises CalledProcessError if there is an error running ssh
     """
     LOGGER.info("Running: %s %s", connect, remote_cmd)
-    completed_process = run(f"ssh {connect} {remote_cmd}",
-                            shell=True,
-                            encoding="utf-8",
-                            capture_output=True)
-    completed_process.check_returncode()
+    try:
+        completed_process = run(f"ssh {connect} {remote_cmd}",
+                                shell=True,
+                                encoding="utf-8",
+                                capture_output=True,
+                                check=True)
+    except CalledProcessError as cpe:
+        LOGGER.debug("SSH subprocess run failed", exc_info=cpe)
+        raise
+    
     result = completed_process.stdout
     LOGGER.debug("Successfully Received: %s", result)
     return result
@@ -33,13 +38,24 @@ def ssh_execute(connect: str, remote_cmd: str) -> str:
 
 def ls(connect: str, path: str = "*") -> List[str]:
     """
-    List the contents of the requested path. Will run f"ssh {ssh_connect} 'ls {path}'"
-    ssh_connect: ssh command line args needed to connect. Will result in command line of
+    List the contents of the requested path. Will run f"ssh {ssh_connect} 'ls {path}'".
+    If the connection is not successful or the path does not exist then CalledProcessError
+    will be raised.
+
+    connect: ssh command line args needed to connect. Will result in command line of
        f"ssh {ssh_connect}"
     returns - list of filenames
+
+    If no files are found at path then return an empty list.
     """
-    ls_result = ssh_execute(connect, f"'ls -d {path}'")
-    return ls_result.strip().split("\n")
+    try:
+        ls_result = ssh_execute(connect, f"'ls -d {path}'")
+        return ls_result.strip().split("\n")
+    except CalledProcessError as cpe:
+        LOGGER.error("Error listing contents for '%s/%s'", connect, path, exc_info=cpe)
+        if 'No such file or directory' in cpe.stderr:
+            return []
+        raise
 
 
 def scp(src_path: str, dest_path: str):
@@ -52,5 +68,5 @@ def scp(src_path: str, dest_path: str):
     completed_process = run(f"scp {src_path} {dest_path}",
                             shell=True,
                             encoding="utf-8",
+                            check=True,
                             capture_output=True)
-    completed_process.check_returncode()
