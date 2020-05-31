@@ -41,7 +41,8 @@ def ls(remote_url: str) -> List[str]:
     List the contents of the requested remote path.
 
     remote_path - Of the form {REMOTE_HOST}[:port][/path] where port and path are optional, if no path
-      then list contents are default directory
+      then list contents are default directory. If no path is given then '*' will be used (i.e. glob
+      search for all files in the default directory). To list multiple files a glob MUST be used.
 
     returns - list of filenames
 
@@ -63,7 +64,7 @@ def ls(remote_url: str) -> List[str]:
         ssh_args = remote_host
 
     try:
-        ls_result = ssh_execute(ssh_args, f"ls -d {remote_path}")
+        ls_result = ssh_execute(ssh_args, f"shopt -s dotglob ; ls -Ad {remote_path}")
         return ls_result.strip().split("\n")
     except CalledProcessError as cpe:
         LOGGER.debug("Error listing contents for '%s", remote_url, exc_info=cpe)
