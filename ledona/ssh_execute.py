@@ -11,7 +11,7 @@ from typing import List
 LOGGER = logging.getLogger(__name__)
 
 
-def ssh_execute(connect: str, remote_cmd: str) -> str:
+def ssh_execute(ssh_args: str, remote_cmd: str) -> str:
     """
     Use ssh to execute the command in cli_str
     connect - ssh connection string. i.e. run f"ssh {connect} {cmd}"
@@ -20,9 +20,9 @@ def ssh_execute(connect: str, remote_cmd: str) -> str:
 
     raises CalledProcessError if there is an error running ssh
     """
-    LOGGER.info("Running: %s %s", connect, remote_cmd)
+    LOGGER.info("Running: ssh %s '%s'", ssh_args, remote_cmd)
     try:
-        completed_process = run(f"ssh {connect} {remote_cmd}",
+        completed_process = run(f"ssh {ssh_args} '{remote_cmd}'",
                                 shell=True,
                                 encoding="utf-8",
                                 capture_output=True,
@@ -30,29 +30,43 @@ def ssh_execute(connect: str, remote_cmd: str) -> str:
     except CalledProcessError as cpe:
         LOGGER.debug("SSH subprocess run failed", exc_info=cpe)
         raise
-    
+
     result = completed_process.stdout
     LOGGER.debug("Successfully Received: %s", result)
     return result
 
 
-def ls(connect: str, path: str = "*") -> List[str]:
+def ls(remote_url: str) -> List[str]:
     """
-    List the contents of the requested path. Will run f"ssh {ssh_connect} 'ls {path}'".
-    If the connection is not successful or the path does not exist then CalledProcessError
-    will be raised.
+    List the contents of the requested remote path.
 
-    connect: ssh command line args needed to connect. Will result in command line of
-       f"ssh {ssh_connect}"
+    remote_path - Of the form {REMOTE_HOST}[:port][/path] where port and path are optional, if no path
+      then list contents are default directory
+
     returns - list of filenames
 
     If no files are found at path then return an empty list.
     """
+    if '/' in remote_url:
+        remote_host, remote_path = remote_url.split('/', 1)
+    else:
+        remote_host = remote_url
+        remote_path = '*'
+
+    if ':' in remote_host:
+        if remote_host.count(':') > 1:
+            raise ValueError(f"Remote url format invalid. Must be REMOTE_HOST[:port][/path]. {remote_url=}")
+        host, port = remote_host.split(':')
+        assert port.isdigit(), f"port should be an integer. instead {port=}"
+        ssh_args = f"{host} -p {port}"
+    else:
+        ssh_args = remote_host
+
     try:
-        ls_result = ssh_execute(connect, f"'ls -d {path}'")
+        ls_result = ssh_execute(ssh_args, f"ls -d {remote_path}")
         return ls_result.strip().split("\n")
     except CalledProcessError as cpe:
-        LOGGER.error("Error listing contents for '%s/%s'", connect, path, exc_info=cpe)
+        LOGGER.debug("Error listing contents for '%s", remote_url, exc_info=cpe)
         if 'No such file or directory' in cpe.stderr:
             return []
         raise
@@ -61,12 +75,13 @@ def ls(connect: str, path: str = "*") -> List[str]:
 def scp(src_path: str, dest_path: str):
     """
     copy file from source_path to dest_path using scp. Will run f"scp {source_path} {dest_path}"
-    Make sure that whichever path is remote looks like {REMOTE_HOST}:path
-
+    Make sure that whichever path is remote it looks like scp://[user@]host[:port][/path]
     raises CalledProcessError if there is an error running scp
     """
-    completed_process = run(f"scp {src_path} {dest_path}",
-                            shell=True,
-                            encoding="utf-8",
-                            check=True,
-                            capture_output=True)
+    assert src_path.startswith("scp://")
+    assert dest_path.startswith("scp://")
+    run(f"scp {src_path} {dest_path}",
+        shell=True,
+        encoding="utf-8",
+        check=True,
+        capture_output=True)
