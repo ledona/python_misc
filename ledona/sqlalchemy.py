@@ -71,7 +71,7 @@ class SQLAlchemyWrapper:
         """
         if do_not_create and path_to_db_file is not None:
             if not os.path.isfile(path_to_db_file):
-                raise FileNotFoundError("db file '{}' not found".format(path_to_db_file))
+                raise FileNotFoundError(f"db file '{path_to_db_file}' not found")
         self.orig_path_to_db = path_to_db_file
         db_path = ('/' + path_to_db_file) if path_to_db_file is not None else ""
         self.engine = create_engine('sqlite://' + db_path,
