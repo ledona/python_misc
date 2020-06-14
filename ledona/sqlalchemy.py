@@ -1,9 +1,10 @@
 from contextlib import contextmanager
 import os
 
-from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm.session import Session
 
 
 # make sure that foreign keys are enforced
@@ -78,7 +79,7 @@ class SQLAlchemyWrapper:
                                     echo=verbose)
         self._SESSION_MAKER_FACTORY = sessionmaker(bind=self.engine)
 
-    def get_session(self):
+    def get_session(self) -> Session:
         """
         Create and return a new session.
         """
@@ -119,7 +120,7 @@ class SQLAlchemyWrapper:
         self.engine.echo = value
 
     @contextmanager
-    def session_scoped(self):
+    def session_scoped(self) -> Session:
         """
         context manager that yields a session, rollsback if there is an exception, otherwise commits
         at conclusion (unless autocommit is enabled in which case a closing commit is unneeded).
@@ -164,7 +165,7 @@ def create_empty_db(sqlalchemy_orm_base, filename=None, verbose=False,
     returns the db_obj reference to the database
     """
     if filename is not None and not overwrite_if_exists and os.path.isfile(filename):
-        raise FileExistsError("file '{}' already exists".format(filename))
+        raise FileExistsError(f"file '{filename}' already exists")
     db_obj = get_db_obj(filename, verbose, do_not_create=False,
                         sqlalchemy_wrapper=sqlalchemy_wrapper)
     sqlalchemy_orm_base.metadata.create_all(db_obj.engine)
