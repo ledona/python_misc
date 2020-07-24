@@ -124,7 +124,7 @@ def deep_compare_objs(obj1, obj2, attr_names=None, msg="", assert_tests=True) ->
             deep_compare(getattr(obj1, attr_name),
                          getattr(obj2, attr_name),
                          assert_tests=True,
-                         msg=msg + f" >> obj1.{attr_name} != obj2.{attr_name}"
+                         msg=msg + f" >> obj1.{attr_name} != obj2.{attr_name}")
     except AssertionError:
         if assert_tests:
             raise
