@@ -56,7 +56,9 @@ def ls(remote_url: str) -> List[str]:
 
     if ':' in remote_host:
         if remote_host.count(':') > 1:
-            raise ValueError(f"Remote url format invalid. Must be REMOTE_HOST[:port][/path]. {remote_url=}")
+            raise ValueError(
+                f"Remote url format invalid. Must be REMOTE_HOST[:port][/path]. {remote_url=}"
+            )
         host, port = remote_host.split(':')
         assert port.isdigit(), f"port should be an integer. instead {port=}"
         ssh_args = f"{host} -p {port}"
@@ -79,7 +81,8 @@ def scp(src_path: str, dest_path: str):
     Make sure that whichever path is remote it looks like scp://[user@]host[:port][/path]
     raises CalledProcessError if there is an error running scp
     """
-    assert src_path.startswith("scp://") != dest_path.startswith("scp://"), "expecting to be writing to XOR from remote"
+    assert src_path.startswith("scp://") != dest_path.startswith("scp://"), \
+        "expecting to be writing to XOR from remote"
     run(f"scp {src_path} {dest_path}",
         shell=True,
         encoding="utf-8",
