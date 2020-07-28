@@ -179,11 +179,13 @@ def deep_compare_dicts(dict1, dict2, msg="", key_names=None, assert_tests=True, 
 
         if minimal_key_test:
             assert key_names_set <= set(dict1.keys()), \
-                msg + ": dict1 does not have keys {}".format(key_names_set - set(dict1.keys()))
+                msg + f": dict1 does not have keys {key_names_set - set(dict1.keys())}"
             assert key_names_set <= set(dict2.keys()), \
-                msg + ": dict2 does not have key {}".format(key_names_set - set(dict2.keys()))
+                msg + f": dict2 does not have keys {key_names_set - set(dict2.keys())}"
 
         for key_name in key_names_set:
+            assert key_name in dict1, msg + f": {key_name=} not in dict1"
+            assert key_name in dict2, msg + f": {key_name=} not in dict2"
             deep_compare(dict1[key_name], dict2[key_name],
                          assert_tests=True,
                          msg=msg + "dict1['{key_name}'] != dict2['{key_name}']".format(key_name=key_name))
