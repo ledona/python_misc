@@ -27,7 +27,7 @@ def deep_compare(first, second, msg=None, assert_tests=True) -> bool:
                                          assert_tests=assert_tests)
     else:
         try:
-            assert first == second, msg
+            assert first == second, msg + f" :: {first=} != {second=}"
         except AssertionError:
             if assert_tests:
                 raise
