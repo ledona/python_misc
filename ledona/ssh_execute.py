@@ -81,7 +81,8 @@ def scp(src_path: str, dest_path: str):
     Make sure that whichever path is remote it looks like scp://[user@]host[:port][/path]
     raises CalledProcessError if there is an error running scp
     """
-    assert src_path.startswith("scp://") != dest_path.startswith("scp://"), \
+    assert not (src_path.startswith("scp://") and
+                dest_path.startswith("scp://")), \
         "expecting to be writing to XOR from remote"
     run(f"scp {src_path} {dest_path}",
         shell=True,
