@@ -23,8 +23,8 @@ class BaseTestClass(unittest.TestCase):
                 if col_name not in cols:
                     df2 = df2.drop(col_name, 1)
 
-        df1 = df1.reindex(sorted(df1.columns), axis=1)
-        df2 = df2.reindex(sorted(df2.columns), axis=1)
+        df1 = df1.reindex(sorted(df1.columns, key=str), axis=1)
+        df2 = df2.reindex(sorted(df2.columns, key=str), axis=1)
 
         if cols is None:
             # test if the columns match
