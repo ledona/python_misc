@@ -57,15 +57,20 @@ class BaseTestClass(unittest.TestCase):
         """
         convenience method that will call the data frame equality test if first and second are data fromes
         """
-        if type(first) == pandas.DataFrame and type(second) == pandas.DataFrame:
+        if isinstance(first, pandas.DataFrame) and isinstance(second, pandas.DataFrame):
             return self.assertDataFrameEqual(first, second, msg=msg)
-        elif isinstance(first, MagicMock):
+
+        if isinstance(first, pandas.Series) and isinstance(second, pandas.Series):
+            return pandas.util.testing.assert_series_equal(first, second, obj=msg)
+
+        if isinstance(first, MagicMock):
             return self.compare_obj_obj(first, second, first.keys(), msg=(msg or ""))
-        elif type(first) == dict and type(second) == dict:
+
+        if isinstance(first, dict) and isinstance(second, dict):
             self.assertEqual(set(first.keys()), set(second.keys()), msg)
             return self.compare_dict_dict(first, second, msg=(msg or ""))
-        else:
-            return super().assertEqual(first, second, msg)
+
+        return super().assertEqual(first, second, msg)
 
     def compare_dict_dict(self, dict1, dict2, msg="", key_names=None):
         """
