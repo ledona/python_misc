@@ -2,12 +2,27 @@ import sys
 import time
 import argparse
 from datetime import timedelta
+import hashlib
 
 from . import sqlalchemy
 from .base_test_class import BaseTestClass
 from .deep_compare import (deep_compare, deep_compare_dicts, deep_compare_objs,
                            compare_dataframes, deep_compare_ordered_collections)
 from .json import make_json_compatible
+
+
+def _constant_hasher(obj, as_int=True):
+    hasher = hashlib.sha1()
+    hasher.update(repr(obj).encode('utf-8'))
+    return int(hasher.hexdigest(), 16) if as_int else hasher.hexdigest()
+
+
+# constant for result of hashing None
+HASHED_NONE = _constant_hasher(None, as_int=True)
+
+
+def constant_hash_str(str_, as_int=True):
+    return _constant_hasher(str_, as_int=as_int)
 
 
 def process_timer(timed_func):

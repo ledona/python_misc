@@ -1,11 +1,12 @@
-import argparse
-import requests
-import json
-import functools
 from datetime import datetime
-import socket
+import argparse
+import functools
+import json
 import os
+import requests
+import socket
 import warnings
+
 
 _ENABLED = True
 
@@ -79,9 +80,13 @@ def notify(*args,
     url = webhook_url
     if url is None:
         if env_var not in os.environ:
-            raise ValueError("Slack webhook url environment variable '{}' is not set!"
-                             .format(env_var))
-        url = os.environ[env_var]
+            warnings.warn(
+                f"Slack webhook url environment variable '{env_var}' is not set! "
+                "Slack notifications disabled!"
+            )
+            disable()
+        else:
+            url = os.environ[env_var]
 
     msg_format = "" if additional_msg is None else additional_msg + " : "
     if include_host:
@@ -96,11 +101,11 @@ def notify(*args,
         msg_format += "\n{args_text}"
         # substitute a lambda function for the true value of include_args
         if include_args is True:
-            include_args = lambda *args, **kwargs: "args: _{}_\nkwargs: _{}_".format(args, kwargs)
+            include_args = lambda *args, **kwargs: f"args: _{args}_\nkwargs: _{kwargs}_"
 
     if include_return is True:
         # substitute a simple lambda for the True value of include_return
-        include_return = lambda ret: "Returned: _{}_".format(ret)
+        include_return = lambda ret: f"Returned: _{ret}_"
 
     # actual decorator, paramaterized
     def dec_(func):
@@ -120,7 +125,7 @@ def notify(*args,
                     kwargs=kwargs)
                 r = webhook(url, text=msg)
                 if is_enabled() and r.status_code != 200:
-                    err_msg = "Non 200 response from Slack. {}".format(r)
+                    err_msg = f"Non 200 response from Slack. {r}"
                     if raise_on_requests_error:
                         raise SlackNotifyError(err_msg, r)
                     else:
