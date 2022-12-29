@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 import os
+from typing import Generator
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
@@ -120,7 +121,7 @@ class SQLAlchemyWrapper:
         self.engine.echo = value
 
     @contextmanager
-    def session_scoped(self) -> Session:
+    def session_scoped(self) -> Generator[Session]:
         """
         context manager that yields a session, rollsback if there is an exception, otherwise commits
         at conclusion (unless autocommit is enabled in which case a closing commit is unneeded).
