@@ -121,7 +121,7 @@ class SQLAlchemyWrapper:
         self.engine.echo = value
 
     @contextmanager
-    def session_scoped(self) -> Generator[Session]:
+    def session_scoped(self) -> Generator[Session, None, None]:
         """
         context manager that yields a session, rollsback if there is an exception, otherwise commits
         at conclusion (unless autocommit is enabled in which case a closing commit is unneeded).
