@@ -43,7 +43,8 @@ def compare_dataframes(df1: pandas.DataFrame, df2: pandas.DataFrame,
                        ignore_col_order: bool = False,
                        ignore_row_order: bool = True,
                        ignore_index: bool = False,
-                       assert_tests: bool = True) -> bool:
+                       assert_tests: bool = True,
+                       **assert_frame_equal_kwargs) -> bool:
     """
     compare 2 dataframes, column types must match, expect an error with 'dtype' are different
     if column types don't match
@@ -59,6 +60,7 @@ def compare_dataframes(df1: pandas.DataFrame, df2: pandas.DataFrame,
     returns - true if they are equivalent, false if not (if assert_tests is True then an inequality will
               result in an AssertionError instead of a returned False)
     """
+    assert not (msg is not None and "obj" in assert_frame_equal_kwargs), "'msg' and 'obj' keyword args cannot be used together"
     if not __debug__ and assert_tests is True:
         raise ValueError("assert_tests cannot be true in optimized/non debug mode")
 
@@ -93,7 +95,10 @@ def compare_dataframes(df1: pandas.DataFrame, df2: pandas.DataFrame,
         assert df1.columns.tolist() == df2.columns.tolist(), \
             ((msg + " :: ") if msg is not None else "") + "column names don't match"
 
-        pandas.util.testing.assert_frame_equal(df1, df2, check_names=True, obj=msg)
+        kwargs = dict(assert_frame_equal_kwargs)
+        if "check_names" not in kwargs:
+            kwargs["check_names"] = True
+        pandas.util.testing.assert_frame_equal(df1, df2, obj=msg, **kwargs)
     except AssertionError:
         if assert_tests:
             raise
