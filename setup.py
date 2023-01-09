@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='ledona',
-    version='0.1',
+    version='2023.01.08',
     description='Assorted useful stuff for my python projects',
     packages=find_packages(),
     install_requires=(
