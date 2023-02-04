@@ -16,32 +16,6 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
     cursor.close()
 
 
-# TODO: tie the following slow query monitor code to db verbosity
-"""
-from sqlalchemy import event
-import logging
-from sqlalchemy.engine import Engine
-import time
-
-logging.basicConfig()
-logger = logging.getLogger("myapp.sqltime")
-logger.setLevel(logging.DEBUG)
-
-
-@event.listens_for(Engine, "before_cursor_execute")
-def before_cursor_execute(conn, cursor, statement,
-                          parameters, context, executemany):
-    conn.info.setdefault('query_start_time', []).append(time.time())
-
-
-@event.listens_for(Engine, "after_cursor_execute")
-def after_cursor_execute(conn, cursor, statement,
-                         parameters, context, executemany):
-    total = time.time() - conn.info['query_start_time'].pop(-1)
-    logger.debug("Query ran in {t:f} secs: {stmt}".format(stmt=statement, t=total))
-"""
-
-
 class SQLAlchemyWrapper:
     """
     Lightweight wrapper for SQL Alchemy DB access. The db object's associated DBManager
@@ -65,19 +39,20 @@ class SQLAlchemyWrapper:
 
     db_obj = SQLAlchemyWrapper("filename.db")
     """
+
     def __init__(self, path_to_db_file=None, verbose=False, do_not_create=True):
         """
         path_to_db_file - if None then the DB will be in memory
         do_not_create - if True then first test that a file at path_to_db_file exists, and raise
-           an exception if the file is not there. ignored if path_to_db_file is None (i.e. in memory DB)
+           an exception if the file is not there. ignored if path_to_db_file is None 
+           (i.e. in memory DB)
         """
         if do_not_create and path_to_db_file is not None:
             if not os.path.isfile(path_to_db_file):
                 raise FileNotFoundError(f"db file '{path_to_db_file}' not found")
         self.orig_path_to_db = path_to_db_file
-        db_path = ('/' + path_to_db_file) if path_to_db_file is not None else ""
-        self.engine = create_engine('sqlite://' + db_path,
-                                    echo=verbose)
+        db_path = ("/" + path_to_db_file) if path_to_db_file is not None else ""
+        self.engine = create_engine("sqlite://" + db_path, echo=verbose)
         self._SESSION_MAKER_FACTORY = sessionmaker(bind=self.engine)
 
     def get_session(self) -> Session:
@@ -104,12 +79,12 @@ class SQLAlchemyWrapper:
         return result
 
     @staticmethod
-    def get_pragma_user_version(engine):
+    def get_pragma_user_version(engine) -> str:
         return engine.execute("pragma user_version").fetchone()[0]
 
     def set_user_version(self, version):
-        """ set the the db id for the sport manager used to create the DB (use with caution) """
-        self.execute("pragma user_version = {}".format(version))
+        """set the the db id for the sport manager used to create the DB (use with caution)"""
+        self.execute(f"pragma user_version = {version}")
 
     @property
     def verbose(self):
@@ -145,18 +120,28 @@ class SQLAlchemyWrapper:
             session.close()
 
 
-def get_db_obj(path_to_db_file=None, verbose=False, sqlalchemy_wrapper=SQLAlchemyWrapper,
-               do_not_create=True) -> SQLAlchemyWrapper:
+def get_db_obj(
+    path_to_db_file=None,
+    verbose=False,
+    sqlalchemy_wrapper=SQLAlchemyWrapper,
+    do_not_create=True,
+) -> SQLAlchemyWrapper:
     """
     do_not_create: if True and there is not already a file at path_to_db_file then raise
       FileNotFoundError, By default do not create a new DB
     """
-    return sqlalchemy_wrapper(path_to_db_file=path_to_db_file,
-                              do_not_create=do_not_create, verbose=verbose)
+    return sqlalchemy_wrapper(
+        path_to_db_file=path_to_db_file, do_not_create=do_not_create, verbose=verbose
+    )
 
 
-def create_empty_db(sqlalchemy_orm_base, filename=None, verbose=False,
-                    sqlalchemy_wrapper=SQLAlchemyWrapper, overwrite_if_exists=False):
+def create_empty_db(
+    sqlalchemy_orm_base,
+    filename=None,
+    verbose=False,
+    sqlalchemy_wrapper=SQLAlchemyWrapper,
+    overwrite_if_exists=False,
+):
     """
     create a new db at filename
 
@@ -167,7 +152,8 @@ def create_empty_db(sqlalchemy_orm_base, filename=None, verbose=False,
     """
     if filename is not None and not overwrite_if_exists and os.path.isfile(filename):
         raise FileExistsError(f"file '{filename}' already exists")
-    db_obj = get_db_obj(filename, verbose, do_not_create=False,
-                        sqlalchemy_wrapper=sqlalchemy_wrapper)
+    db_obj = get_db_obj(
+        filename, verbose, do_not_create=False, sqlalchemy_wrapper=sqlalchemy_wrapper
+    )
     sqlalchemy_orm_base.metadata.create_all(db_obj.engine)
     return db_obj
