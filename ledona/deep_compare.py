@@ -1,7 +1,7 @@
-from typing import Optional, Iterable
+from typing import Iterable
 from enum import Enum
 
-import pandas
+import pandas as pd
 
 
 def deep_compare(first, second, msg=None, assert_tests=True) -> bool:
@@ -12,19 +12,30 @@ def deep_compare(first, second, msg=None, assert_tests=True) -> bool:
     if not __debug__ and assert_tests is True:
         raise ValueError("assert_tests cannot be true in optimized/non debug mode")
 
-    if isinstance(first, pandas.DataFrame):
+    if isinstance(first, pd.DataFrame):
         return compare_dataframes(first, second, msg=msg, assert_tests=assert_tests)
-    elif hasattr(first, '__dict__') and not isinstance(first, Enum):
-        return deep_compare_objs(first, second, msg=(msg or ""), assert_tests=assert_tests)
-    elif hasattr(first, '_fields'):
+    if hasattr(first, "__dict__") and not isinstance(first, Enum):
+        return deep_compare_objs(
+            first, second, msg=(msg or ""), assert_tests=assert_tests
+        )
+    if hasattr(first, "_fields"):
         # must be a named tuple...
-        return deep_compare_objs(first, second, attr_names=first._fields, msg=(msg or ""),
-                                 assert_tests=assert_tests)
-    elif isinstance(first, dict):
-        return deep_compare_dicts(first, second, msg=(msg or ""), assert_tests=assert_tests)
-    elif isinstance(first, (list, tuple)):
-        deep_compare_ordered_collections(first, second, msg=(msg or ""),
-                                         assert_tests=assert_tests)
+        return deep_compare_objs(
+            first,
+            second,
+            attr_names=first._fields,
+            msg=(msg or ""),
+            assert_tests=assert_tests,
+        )
+    if isinstance(first, dict):
+        return deep_compare_dicts(
+            first, second, msg=(msg or ""), assert_tests=assert_tests
+        )
+
+    if isinstance(first, (list, tuple)):
+        deep_compare_ordered_collections(
+            first, second, msg=(msg or ""), assert_tests=assert_tests
+        )
     else:
         try:
             assert first == second, msg + f" :: {first=} != {second=}"
@@ -37,14 +48,17 @@ def deep_compare(first, second, msg=None, assert_tests=True) -> bool:
     return True
 
 
-def compare_dataframes(df1: pandas.DataFrame, df2: pandas.DataFrame,
-                       cols: Optional[Iterable[str]] = None,
-                       msg: Optional[str] = None,
-                       ignore_col_order: bool = False,
-                       ignore_row_order: bool = True,
-                       ignore_index: bool = False,
-                       assert_tests: bool = True,
-                       **assert_frame_equal_kwargs) -> bool:
+def compare_dataframes(
+    df1: pd.DataFrame,
+    df2: pd.DataFrame,
+    cols: None | Iterable[str] = None,
+    msg: None | str = None,
+    ignore_col_order: bool = False,
+    ignore_row_order: bool = True,
+    ignore_index: bool = False,
+    assert_tests: bool = True,
+    **assert_frame_equal_kwargs,
+) -> bool:
     """
     compare 2 dataframes, column types must match, expect an error with 'dtype' are different
     if column types don't match
@@ -60,12 +74,14 @@ def compare_dataframes(df1: pandas.DataFrame, df2: pandas.DataFrame,
     returns - true if they are equivalent, false if not (if assert_tests is True then an inequality will
               result in an AssertionError instead of a returned False)
     """
-    assert not (msg is not None and "obj" in assert_frame_equal_kwargs), "'msg' and 'obj' keyword args cannot be used together"
+    assert not (
+        msg is not None and "obj" in assert_frame_equal_kwargs
+    ), "'msg' and 'obj' keyword args cannot be used together"
     if not __debug__ and assert_tests is True:
         raise ValueError("assert_tests cannot be true in optimized/non debug mode")
 
-    assert isinstance(df1, pandas.DataFrame)
-    assert isinstance(df2, pandas.DataFrame)
+    assert isinstance(df1, pd.DataFrame)
+    assert isinstance(df2, pd.DataFrame)
 
     if cols is not None:
         # trim the result to the columns to test
@@ -84,21 +100,22 @@ def compare_dataframes(df1: pandas.DataFrame, df2: pandas.DataFrame,
 
     # sort the dataframes
     if ignore_row_order is True:
-        df1 = df1.reindex(sorted(df1.columns), axis=1)
-        df2 = df2.reindex(sorted(df2.columns), axis=1)
+        df1 = df1.sort_values(by=sorted(df1.columns))
+        df2 = df2.sort_values(by=sorted(df2.columns))
 
     if ignore_index is True:
         df1 = df1.reset_index(drop=True)
         df2 = df2.reset_index(drop=True)
 
     try:
-        assert df1.columns.tolist() == df2.columns.tolist(), \
-            ((msg + " :: ") if msg is not None else "") + "column names don't match"
+        assert df1.columns.tolist() == df2.columns.tolist(), (
+            (msg + " :: ") if msg is not None else ""
+        ) + "column names don't match"
 
         kwargs = dict(assert_frame_equal_kwargs)
         if "check_names" not in kwargs:
             kwargs["check_names"] = True
-        pandas.util.testing.assert_frame_equal(df1, df2, obj=msg, **kwargs)
+        pd.util.testing.assert_frame_equal(df1, df2, obj=msg, **kwargs)
     except AssertionError:
         if assert_tests:
             raise
@@ -121,15 +138,19 @@ def deep_compare_objs(obj1, obj2, attr_names=None, msg="", assert_tests=True) ->
 
     try:
         for attr_name in attr_names:
-            assert hasattr(obj1, attr_name), \
-                f"{msg}: obj1 does not have attribute '{attr_name}'"
-            assert hasattr(obj2, attr_name), \
-                f"{msg}: obj2 does not have attribute '{attr_name}'"
+            assert hasattr(
+                obj1, attr_name
+            ), f"{msg}: obj1 does not have attribute '{attr_name}'"
+            assert hasattr(
+                obj2, attr_name
+            ), f"{msg}: obj2 does not have attribute '{attr_name}'"
 
-            deep_compare(getattr(obj1, attr_name),
-                         getattr(obj2, attr_name),
-                         assert_tests=True,
-                         msg=msg + f" >> obj1.{attr_name} != obj2.{attr_name}")
+            deep_compare(
+                getattr(obj1, attr_name),
+                getattr(obj2, attr_name),
+                assert_tests=True,
+                msg=msg + f" >> obj1.{attr_name} != obj2.{attr_name}",
+            )
     except AssertionError:
         if assert_tests:
             raise
@@ -144,9 +165,12 @@ def deep_compare_ordered_collections(objs1, objs2, msg="", assert_tests=True):
         raise ValueError("assert_tests cannot be true in optimized/non debug mode")
 
     try:
-        assert len(objs1) == len(objs2), \
-            msg + ": lengths do not match. objs1 has length {}, objs2 has length {}".format(
-                len(objs1), len(objs2))
+        assert len(objs1) == len(objs2), (
+            msg
+            + ": lengths do not match. objs1 has length {}, objs2 has length {}".format(
+                len(objs1), len(objs2)
+            )
+        )
         for i, (obj1, obj2) in enumerate(zip(objs1, objs2)):
             deep_compare(obj1, obj2, msg=msg + f": items {i} don't match")
     except AssertionError:
@@ -158,7 +182,9 @@ def deep_compare_ordered_collections(objs1, objs2, msg="", assert_tests=True):
     return True
 
 
-def deep_compare_dicts(dict1, dict2, msg="", key_names=None, assert_tests=True, minimal_key_test=False):
+def deep_compare_dicts(
+    dict1, dict2, msg="", key_names=None, assert_tests=True, minimal_key_test=False
+):
     """
     assert_tests: if true then comparison failures will raise assertion errors
     minimal_test: if true then only compare values for keys in key_names, or if key_names is None
@@ -183,17 +209,25 @@ def deep_compare_dicts(dict1, dict2, msg="", key_names=None, assert_tests=True, 
             key_names_set = set(key_names)
 
         if minimal_key_test:
-            assert key_names_set <= set(dict1.keys()), \
+            assert key_names_set <= set(dict1.keys()), (
                 msg + f": dict1 does not have keys {key_names_set - set(dict1.keys())}"
-            assert key_names_set <= set(dict2.keys()), \
+            )
+            assert key_names_set <= set(dict2.keys()), (
                 msg + f": dict2 does not have keys {key_names_set - set(dict2.keys())}"
+            )
 
         for key_name in key_names_set:
             assert key_name in dict1, msg + f": {key_name=} not in dict1"
             assert key_name in dict2, msg + f": {key_name=} not in dict2"
-            deep_compare(dict1[key_name], dict2[key_name],
-                         assert_tests=True,
-                         msg=msg + "dict1['{key_name}'] != dict2['{key_name}']".format(key_name=key_name))
+            deep_compare(
+                dict1[key_name],
+                dict2[key_name],
+                assert_tests=True,
+                msg=msg
+                + "dict1['{key_name}'] != dict2['{key_name}']".format(
+                    key_name=key_name
+                ),
+            )
     except AssertionError:
         if assert_tests:
             raise
