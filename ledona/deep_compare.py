@@ -71,8 +71,8 @@ def compare_dataframes(
        columns
     assert_tests - if an internal comparison fails then raise an AssertionError (this allows for the
                    specific inequality to be surfaced)
-    returns - true if they are equivalent, false if not (if assert_tests is True then an inequality will
-              result in an AssertionError instead of a returned False)
+    returns - true if they are equivalent, false if not (if assert_tests is True then an inequality
+        will result in an AssertionError instead of a returned False)
     """
     assert not (
         msg is not None and "obj" in assert_frame_equal_kwargs
@@ -110,7 +110,11 @@ def compare_dataframes(
     try:
         assert df1.columns.tolist() == df2.columns.tolist(), (
             (msg + " :: ") if msg is not None else ""
-        ) + "column names don't match"
+        ) + (
+            "column names don't match. "
+            f"{set(df1.columns) - set(df2.columns)} in df1 and not in df2. "
+            f"{set(df2.columns) - set(df1.columns)} in df2 and not in df1"
+        )
 
         kwargs = dict(assert_frame_equal_kwargs)
         if "check_names" not in kwargs:
