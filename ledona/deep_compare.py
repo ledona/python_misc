@@ -85,13 +85,15 @@ def compare_dataframes(
 
     if cols is not None:
         # trim the result to the columns to test
-        for col_name in df1.columns:
-            if col_name not in cols:
-                df1 = df1.drop(col_name, 1)
-
-        for col_name in df2.columns:
-            if col_name not in cols:
-                df2 = df2.drop(col_name, 1)
+        cols_as_set = set(cols) if not isinstance(cols, set) else cols
+        assert (
+            len(missing_cols := cols_as_set - set(df1.columns)) == 0
+        ), f"Not all the requested cols are in df1. {missing_cols=}"
+        assert (
+            len(missing_cols := cols_as_set - set(df2.columns)) == 0
+        ), f"Not all the requested cols are in df2. {missing_cols=}"
+        df1 = df1[cols]
+        df2 = df2[cols]
 
     if ignore_col_order is True:
         # sort both by column name
@@ -108,18 +110,28 @@ def compare_dataframes(
         df2 = df2.reset_index(drop=True)
 
     try:
-        assert df1.columns.tolist() == df2.columns.tolist(), (
-            (msg + " :: ") if msg is not None else ""
-        ) + (
-            "column names don't match. "
-            f"{set(df1.columns) - set(df2.columns)} in df1 and not in df2. "
-            f"{set(df2.columns) - set(df1.columns)} in df2 and not in df1"
-        )
+        if df1.columns.tolist() != df2.columns.tolist():
+            prefix = (msg + " :: ") if msg is not None else ""
+            assert set(df1.columns) == set(df2.columns), prefix + (
+                "column names don't match. "
+                f"{set(df1.columns) - set(df2.columns)} in df1 and not in df2. "
+                f"{set(df2.columns) - set(df1.columns)} in df2 and not in df1"
+            )
+            assert not ignore_col_order, (
+                f"{prefix}Not sure why, but the column names don't match. "
+                "{df1.columns=} {df2.columns=}"
+            )
+            raise AssertionError(
+                prefix
+                + "The order of the columns does not match. {df1.columns=} {df2.columns=}"
+            )
 
         kwargs = dict(assert_frame_equal_kwargs)
         if "check_names" not in kwargs:
             kwargs["check_names"] = True
-        pd.util.testing.assert_frame_equal(df1, df2, obj=msg, **kwargs)
+        pd.util.testing.assert_frame_equal(
+            df1, df2, obj=(msg + " dataframes") if msg is not None else None, **kwargs
+        )
     except AssertionError:
         if assert_tests:
             raise
