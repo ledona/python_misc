@@ -42,8 +42,7 @@ def deep_compare(first, second, msg=None, assert_tests=True) -> bool:
         except AssertionError:
             if assert_tests:
                 raise
-            else:
-                return False
+            return False
 
     return True
 
@@ -177,15 +176,14 @@ def deep_compare_objs(obj1, obj2, attr_names=None, msg="", assert_tests=True) ->
 
 
 def deep_compare_ordered_collections(objs1, objs2, msg="", assert_tests=True):
+    """compare two iterable/ordered collections"""
     if not __debug__ and assert_tests is True:
         raise ValueError("assert_tests cannot be true in optimized/non debug mode")
 
     try:
         assert len(objs1) == len(objs2), (
-            msg
-            + ": lengths do not match. objs1 has length {}, objs2 has length {}".format(
-                len(objs1), len(objs2)
-            )
+            f"{msg}: lengths do not match. objs1 has length {len(objs1)}, "
+            f"objs2 has length {len(objs2)}"
         )
         for i, (obj1, obj2) in enumerate(zip(objs1, objs2)):
             deep_compare(obj1, obj2, msg=msg + f": items {i} don't match")
