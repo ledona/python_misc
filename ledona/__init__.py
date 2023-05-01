@@ -14,6 +14,7 @@ from .deep_compare import (
     deep_compare_ordered_collections,
 )
 from .json import make_json_compatible
+from .profiler import profileit
 
 
 def constant_hasher(obj, as_int=True):
