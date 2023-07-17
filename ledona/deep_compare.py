@@ -15,9 +15,7 @@ def deep_compare(first, second, msg=None, assert_tests=True) -> bool:
     if isinstance(first, pd.DataFrame):
         return compare_dataframes(first, second, msg=msg, assert_tests=assert_tests)
     if hasattr(first, "__dict__") and not isinstance(first, Enum):
-        return deep_compare_objs(
-            first, second, msg=(msg or ""), assert_tests=assert_tests
-        )
+        return deep_compare_objs(first, second, msg=(msg or ""), assert_tests=assert_tests)
     if hasattr(first, "_fields"):
         # must be a named tuple...
         return deep_compare_objs(
@@ -28,14 +26,10 @@ def deep_compare(first, second, msg=None, assert_tests=True) -> bool:
             assert_tests=assert_tests,
         )
     if isinstance(first, dict):
-        return deep_compare_dicts(
-            first, second, msg=(msg or ""), assert_tests=assert_tests
-        )
+        return deep_compare_dicts(first, second, msg=(msg or ""), assert_tests=assert_tests)
 
     if isinstance(first, (list, tuple)):
-        deep_compare_ordered_collections(
-            first, second, msg=(msg or ""), assert_tests=assert_tests
-        )
+        deep_compare_ordered_collections(first, second, msg=(msg or ""), assert_tests=assert_tests)
     else:
         try:
             assert first == second, msg + f" :: {first=} != {second=}"
@@ -121,21 +115,19 @@ def compare_dataframes(
                 "{df1.columns=} {df2.columns=}"
             )
             raise AssertionError(
-                prefix
-                + "The order of the columns does not match. {df1.columns=} {df2.columns=}"
+                prefix + "The order of the columns does not match. {df1.columns=} {df2.columns=}"
             )
 
         kwargs = dict(assert_frame_equal_kwargs)
         if "check_names" not in kwargs:
             kwargs["check_names"] = True
-        pd.util.testing.assert_frame_equal(
+        pd.testing.assert_frame_equal(
             df1, df2, obj=(msg + " dataframes") if msg is not None else None, **kwargs
         )
     except AssertionError:
         if assert_tests:
             raise
-        else:
-            return False
+        return False
 
     return True
 
@@ -153,12 +145,8 @@ def deep_compare_objs(obj1, obj2, attr_names=None, msg="", assert_tests=True) ->
 
     try:
         for attr_name in attr_names:
-            assert hasattr(
-                obj1, attr_name
-            ), f"{msg}: obj1 does not have attribute '{attr_name}'"
-            assert hasattr(
-                obj2, attr_name
-            ), f"{msg}: obj2 does not have attribute '{attr_name}'"
+            assert hasattr(obj1, attr_name), f"{msg}: obj1 does not have attribute '{attr_name}'"
+            assert hasattr(obj2, attr_name), f"{msg}: obj2 does not have attribute '{attr_name}'"
 
             deep_compare(
                 getattr(obj1, attr_name),
@@ -237,10 +225,7 @@ def deep_compare_dicts(
                 dict1[key_name],
                 dict2[key_name],
                 assert_tests=True,
-                msg=msg
-                + "dict1['{key_name}'] != dict2['{key_name}']".format(
-                    key_name=key_name
-                ),
+                msg=msg + "dict1['{key_name}'] != dict2['{key_name}']".format(key_name=key_name),
             )
     except AssertionError:
         if assert_tests:
