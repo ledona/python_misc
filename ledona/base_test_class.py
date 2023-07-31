@@ -5,7 +5,7 @@ import pandas
 
 # TODO: somehow merge this with deep_compare
 class BaseTestClass(unittest.TestCase):
-    """ Add some additional testing and assertions to the base test case class """
+    """Add some additional testing and assertions to the base test case class"""
 
     def assertDataFrameEqual(self, df1, df2, cols=None, msg=None):
         """
@@ -28,40 +28,56 @@ class BaseTestClass(unittest.TestCase):
 
         if cols is None:
             # test if the columns match
-            self.assertEqual(df1.columns.tolist(), df2.columns.tolist(),
-                             ((msg + " :: ") if msg is not None else "") +
-                             "column names don't match")
-        pandas.util.testing.assert_frame_equal(df1, df2, check_names=True, obj=msg)
+            self.assertEqual(
+                df1.columns.tolist(),
+                df2.columns.tolist(),
+                ((msg + " :: ") if msg is not None else "")
+                + "column names don't match",
+            )
+        pandas.testing.assert_frame_equal(df1, df2, check_names=True, obj=msg)
 
     def compare_obj_obj(self, obj1, obj2, attr_names, msg=""):
-        """ test that the values for attr_names attributes are the same across obj1 and obj2 """
+        """test that the values for attr_names attributes are the same across obj1 and obj2"""
         for attr_name in attr_names:
-            self.assertTrue(hasattr(obj1, attr_name),
-                            msg + ": obj1 does not have attribute '{}'".format(attr_name))
-            self.assertTrue(hasattr(obj2, attr_name),
-                            msg + ": obj2 does not have attribute '{}'".format(attr_name))
-            self.assertEqual(getattr(obj1, attr_name),
-                             getattr(obj2, attr_name),
-                             msg + " >> obj1.{attr_name} != obj2.{attr_name}".format(attr_name=attr_name))
+            self.assertTrue(
+                hasattr(obj1, attr_name),
+                msg + f": obj1 does not have attribute '{attr_name}'",
+            )
+            self.assertTrue(
+                hasattr(obj2, attr_name),
+                msg + f": obj2 does not have attribute '{attr_name}'",
+            )
+            self.assertEqual(
+                getattr(obj1, attr_name),
+                getattr(obj2, attr_name),
+                msg
+                + " >> obj1.{attr_name} != obj2.{attr_name}".format(
+                    attr_name=attr_name
+                ),
+            )
 
     def compare_objs_objs(self, objs1, objs2, attr_names, msg=""):
-        """ use compare_obj_obj on list/tuple of objects """
-        self.assertEqual(len(objs1), len(objs2),
-                         msg +
-                         ": lengths do not match. objs1 has length {}, objs2 has length {}".format(
-                             len(objs1), len(objs2)))
+        """use compare_obj_obj on list/tuple of objects"""
+        self.assertEqual(
+            len(objs1),
+            len(objs2),
+            msg + f": lengths do not match. {len(objs1)=}, {len(objs2)=}",
+        )
         for i, (obj1, obj2) in enumerate(zip(objs1, objs2)):
-            self.compare_obj_obj(obj1, obj2, attr_names, msg + ": items {} don't match".format(i))
+            self.compare_obj_obj(
+                obj1, obj2, attr_names, msg + f": items {i} don't match"
+            )
 
     def assertEqual(self, first, second, msg=None):
         """
-        convenience method that will call the data frame equality test if first and second are data fromes
+        convenience method that will call the data frame equality test if first and
+        second are data fromes
         """
         if isinstance(first, pandas.DataFrame) and isinstance(second, pandas.DataFrame):
             return self.assertDataFrameEqual(first, second, msg=msg)
 
         if isinstance(first, pandas.Series) and isinstance(second, pandas.Series):
-            return pandas.util.testing.assert_series_equal(first, second, obj=msg)
+            return pandas.testing.assert_series_equal(first, second, obj=msg)
 
         if isinstance(first, MagicMock):
             return self.compare_obj_obj(first, second, first.keys(), msg=(msg or ""))
@@ -82,9 +98,18 @@ class BaseTestClass(unittest.TestCase):
         """
         if msg is not None:
             msg += " :: "
-        for key_name in (key_names or dict1.keys()):
-            self.assertIn(key_name, dict1, msg + ": dict1 does not have key {}".format(key_name))
-            self.assertIn(key_name, dict2, msg + ": dict2 does not have key {}".format(key_name))
-            self.assertEqual(dict1[key_name],
-                             dict2[key_name],
-                             msg + "dict1['{key_name}'] != dict2['{key_name}']".format(key_name=key_name))
+        for key_name in key_names or dict1.keys():
+            self.assertIn(
+                key_name, dict1, msg + f": dict1 does not have key '{key_name}'"
+            )
+            self.assertIn(
+                key_name, dict2, msg + f": dict2 does not have key '{key_name}'"
+            )
+            self.assertEqual(
+                dict1[key_name],
+                dict2[key_name],
+                msg
+                + "dict1['{key_name}'] != dict2['{key_name}']".format(
+                    key_name=key_name
+                ),
+            )
