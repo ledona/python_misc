@@ -190,7 +190,8 @@ def deep_compare_dicts(
     """
     assert_tests: if true then comparison failures will raise assertion errors
     minimal_test: if true then only compare values for keys in key_names, or if key_names is None
-       only compare values for keys in dict1. all other keys are ignored
+       only compare values for keys in dict1. all other keys are ignored,
+       if false then dicts must have the same set of keys
 
     returns: true if the dicts match, false otherwise
     raises ValueError if testing is true and a mismatch is found
@@ -205,17 +206,23 @@ def deep_compare_dicts(
         msg += " :: "
 
     try:
-        if key_names is None:
-            key_names_set = set(dict1.keys())
-        else:
-            key_names_set = set(key_names)
-
         if minimal_key_test:
+            if key_names is None:
+                key_names_set = set(dict1.keys())
+            else:
+                key_names_set = set(key_names)
+
             assert key_names_set <= set(dict1.keys()), (
                 msg + f": dict1 does not have keys {key_names_set - set(dict1.keys())}"
             )
             assert key_names_set <= set(dict2.keys()), (
                 msg + f": dict2 does not have keys {key_names_set - set(dict2.keys())}"
+            )
+        else:
+            assert (d1_keys := set(dict1.keys())) == (d2_keys := set(dict2.keys())), (
+                msg + ": dict keys don't match. "
+                f"Keys in dict1 and missing from dict2 = {d1_keys - d2_keys}. "
+                f"Keys in dict2 and missing from dict1 = {d2_keys - d1_keys}"
             )
 
         for key_name in key_names_set:
