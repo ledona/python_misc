@@ -93,10 +93,21 @@ def compare_dataframes(
         df1 = df1[sorted(df1.columns)]
         df2 = df2[sorted(df2.columns)]
 
+    if not ignore_index:
+        assert df1.index.name == df2.index.name
+
     # sort the dataframes
     if ignore_row_order is True:
-        df1 = df1.sort_values(by=sorted(df1.columns))
-        df2 = df2.sort_values(by=sorted(df2.columns))
+        df1_sort_by = sorted(df1.columns)
+        df2_sort_by = sorted(df2.columns)
+        if not ignore_index:
+            if df1.index.name is None:
+                df1.index.name = "INDEX"
+                df2.index.name = "INDEX"
+            df1_sort_by.append(df1.index.name)
+            df2_sort_by.append(df2.index.name)
+        df1 = df1.sort_values(by=df1_sort_by)
+        df2 = df2.sort_values(by=df2_sort_by)
 
     if ignore_index is True:
         df1 = df1.reset_index(drop=True)
@@ -219,10 +230,10 @@ def deep_compare_dicts(
                 msg + f": dict2 does not have keys {key_names_set - set(dict2.keys())}"
             )
         else:
-            assert (d1_keys := set(dict1.keys())) == (d2_keys := set(dict2.keys())), (
+            assert (key_names_set := set(dict1.keys())) == (d2_keys := set(dict2.keys())), (
                 msg + ": dict keys don't match. "
-                f"Keys in dict1 and missing from dict2 = {d1_keys - d2_keys}. "
-                f"Keys in dict2 and missing from dict1 = {d2_keys - d1_keys}"
+                f"Keys in dict1 and missing from dict2 = {key_names_set - d2_keys}. "
+                f"Keys in dict2 and missing from dict1 = {d2_keys - key_names_set}"
             )
 
         for key_name in key_names_set:
