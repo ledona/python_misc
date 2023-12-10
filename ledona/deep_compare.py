@@ -1,5 +1,5 @@
-from typing import Iterable
 from enum import Enum
+from typing import Iterable
 
 import pandas as pd
 
@@ -15,7 +15,9 @@ def deep_compare(first, second, msg=None, assert_tests=True) -> bool:
     if isinstance(first, pd.DataFrame):
         return compare_dataframes(first, second, msg=msg, assert_tests=assert_tests)
     if hasattr(first, "__dict__") and not isinstance(first, Enum):
-        return deep_compare_objs(first, second, msg=(msg or ""), assert_tests=assert_tests)
+        return deep_compare_objs(
+            first, second, msg=(msg or ""), assert_tests=assert_tests
+        )
     if hasattr(first, "_fields"):
         # must be a named tuple...
         return deep_compare_objs(
@@ -26,10 +28,14 @@ def deep_compare(first, second, msg=None, assert_tests=True) -> bool:
             assert_tests=assert_tests,
         )
     if isinstance(first, dict):
-        return deep_compare_dicts(first, second, msg=(msg or ""), assert_tests=assert_tests)
+        return deep_compare_dicts(
+            first, second, msg=(msg or ""), assert_tests=assert_tests
+        )
 
     if isinstance(first, (list, tuple)):
-        deep_compare_ordered_collections(first, second, msg=(msg or ""), assert_tests=assert_tests)
+        deep_compare_ordered_collections(
+            first, second, msg=(msg or ""), assert_tests=assert_tests
+        )
     else:
         try:
             assert first == second, msg + f" :: {first=} != {second=}"
@@ -67,67 +73,68 @@ def compare_dataframes(
     returns - true if they are equivalent, false if not (if assert_tests is True then an inequality
         will result in an AssertionError instead of a returned False)
     """
-    assert not (
-        msg is not None and "obj" in assert_frame_equal_kwargs
-    ), "'msg' and 'obj' keyword args cannot be used together"
-    if not __debug__ and assert_tests is True:
-        raise ValueError("assert_tests cannot be true in optimized/non debug mode")
-
-    assert isinstance(df1, pd.DataFrame)
-    assert isinstance(df2, pd.DataFrame)
-
-    if cols is not None:
-        # trim the result to the columns to test
-        cols_as_set = set(cols) if not isinstance(cols, set) else cols
-        assert (
-            len(missing_cols := cols_as_set - set(df1.columns)) == 0
-        ), f"Not all the requested cols are in df1. {missing_cols=}"
-        assert (
-            len(missing_cols := cols_as_set - set(df2.columns)) == 0
-        ), f"Not all the requested cols are in df2. {missing_cols=}"
-        df1 = df1[cols]
-        df2 = df2[cols]
-
-    if ignore_col_order is True:
-        # sort both by column name
-        df1 = df1[sorted(df1.columns)]
-        df2 = df2[sorted(df2.columns)]
-
-    if not ignore_index:
-        assert df1.index.name == df2.index.name
-
-    # sort the dataframes
-    if ignore_row_order is True:
-        df1_sort_by = sorted(df1.columns)
-        df2_sort_by = sorted(df2.columns)
-        if not ignore_index:
-            if df1.index.name is None:
-                df1.index.name = "INDEX"
-                df2.index.name = "INDEX"
-            df1_sort_by.append(df1.index.name)
-            df2_sort_by.append(df2.index.name)
-        df1 = df1.sort_values(by=df1_sort_by)
-        df2 = df2.sort_values(by=df2_sort_by)
-
-    if ignore_index is True:
-        df1 = df1.reset_index(drop=True)
-        df2 = df2.reset_index(drop=True)
-
     try:
-        if df1.columns.tolist() != df2.columns.tolist():
-            prefix = (msg + " :: ") if msg is not None else ""
-            assert set(df1.columns) == set(df2.columns), prefix + (
+        if msg is not None and "obj" in assert_frame_equal_kwargs:
+            raise ValueError("'msg' and 'obj' keyword args cannot be used together")
+        if not __debug__ and assert_tests is True:
+            raise ValueError("assert_tests cannot be true in optimized/non debug mode")
+
+        assert isinstance(df1, pd.DataFrame)
+        assert isinstance(df2, pd.DataFrame)
+
+        if cols is not None:
+            if not ignore_col_order:
+                raise ValueError("Cannot specify cols and test col order")
+            # trim the result to the columns to test
+            cols_as_set = set(cols) if not isinstance(cols, set) else cols
+            assert (
+                len(missing_cols := cols_as_set - set(df1.columns)) == 0
+            ), f"Not all the requested cols are in df1. {missing_cols=}"
+            assert (
+                len(missing_cols := cols_as_set - set(df2.columns)) == 0
+            ), f"Not all the requested cols are in df2. {missing_cols=}"
+            df1 = df1[cols]
+            df2 = df2[cols]
+        elif not ignore_col_order:
+            assert list(df1.columns) == list(
+                df2.columns
+            ), "The order of the columns does not match. {df1.columns=} {df2.columns=}"
+        else:
+            assert set(df1.columns) == set(df2.columns), (
                 "column names don't match. "
                 f"{set(df1.columns) - set(df2.columns)} in df1 and not in df2. "
                 f"{set(df2.columns) - set(df1.columns)} in df2 and not in df1"
             )
-            assert not ignore_col_order, (
-                f"{prefix}Not sure why, but the column names don't match. "
-                "{df1.columns=} {df2.columns=}"
+            # sort both by column name
+            df1 = df1[sorted(df1.columns)]
+            df2 = df2[sorted(df2.columns)]
+
+        if not ignore_index:
+            assert (multi_index := isinstance(df1.index, pd.MultiIndex)) == isinstance(
+                df2.index, pd.MultiIndex
             )
-            raise AssertionError(
-                prefix + "The order of the columns does not match. {df1.columns=} {df2.columns=}"
-            )
+            if multi_index:
+                assert df1.index.names == df2.index.names
+            else:
+                assert df1.index.name == df2.index.name
+
+        if ignore_row_order is True:
+            # sort the dataframes
+            sort_by = sorted(df1.columns)
+            if not ignore_index:
+                if isinstance(df1.index, pd.MultiIndex):
+                    sort_by += df1.index.names
+                else:
+                    if df1.index.name is None:
+                        df1.index.name = "INDEX"
+                        df2.index.name = "INDEX"
+                    sort_by.append(df1.index.name)
+            df1 = df1.sort_values(by=sort_by)
+            df2 = df2.sort_values(by=sort_by)
+
+            if ignore_index:
+                df1 = df1.reset_index(drop=True)
+                df2 = df2.reset_index(drop=True)
 
         kwargs = dict(assert_frame_equal_kwargs)
         if "check_names" not in kwargs:
@@ -156,8 +163,12 @@ def deep_compare_objs(obj1, obj2, attr_names=None, msg="", assert_tests=True) ->
 
     try:
         for attr_name in attr_names:
-            assert hasattr(obj1, attr_name), f"{msg}: obj1 does not have attribute '{attr_name}'"
-            assert hasattr(obj2, attr_name), f"{msg}: obj2 does not have attribute '{attr_name}'"
+            assert hasattr(
+                obj1, attr_name
+            ), f"{msg}: obj1 does not have attribute '{attr_name}'"
+            assert hasattr(
+                obj2, attr_name
+            ), f"{msg}: obj2 does not have attribute '{attr_name}'"
 
             deep_compare(
                 getattr(obj1, attr_name),
@@ -230,7 +241,9 @@ def deep_compare_dicts(
                 msg + f": dict2 does not have keys {key_names_set - set(dict2.keys())}"
             )
         else:
-            assert (key_names_set := set(dict1.keys())) == (d2_keys := set(dict2.keys())), (
+            assert (key_names_set := set(dict1.keys())) == (
+                d2_keys := set(dict2.keys())
+            ), (
                 msg + ": dict keys don't match. "
                 f"Keys in dict1 and missing from dict2 = {key_names_set - d2_keys}. "
                 f"Keys in dict2 and missing from dict1 = {d2_keys - key_names_set}"
@@ -243,7 +256,10 @@ def deep_compare_dicts(
                 dict1[key_name],
                 dict2[key_name],
                 assert_tests=True,
-                msg=msg + "dict1['{key_name}'] != dict2['{key_name}']".format(key_name=key_name),
+                msg=msg
+                + "dict1['{key_name}'] != dict2['{key_name}']".format(
+                    key_name=key_name
+                ),
             )
     except AssertionError:
         if assert_tests:
