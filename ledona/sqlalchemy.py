@@ -1,11 +1,12 @@
-from contextlib import contextmanager
 import os
-from typing import Generator
+from contextlib import contextmanager
+from typing import Generator, cast
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.session import Session
+from sqlalchemy.sql import text
 
 
 # make sure that foreign keys are enforced
@@ -44,7 +45,7 @@ class SQLAlchemyWrapper:
         """
         path_to_db_file - if None then the DB will be in memory
         do_not_create - if True then first test that a file at path_to_db_file exists, and raise
-           an exception if the file is not there. ignored if path_to_db_file is None 
+           an exception if the file is not there. ignored if path_to_db_file is None
            (i.e. in memory DB)
         """
         if do_not_create and path_to_db_file is not None:
@@ -75,12 +76,16 @@ class SQLAlchemyWrapper:
         db_obj.execute("update sometable set col1 = :A where col2 = :B",
                        A=value_1, B=value_2)
         """
-        result = self.engine.execute(stmt, *params, **kwparams)
-        return result
+        if isinstance(stmt, str):
+            stmt = text(stmt)
+        with self.session_scoped() as session:
+            return session.execute(stmt, *params, **kwparams)
 
     @staticmethod
     def get_pragma_user_version(engine) -> str:
-        return engine.execute("pragma user_version").fetchone()[0]
+        with sessionmaker(engine).begin() as session:
+            version = cast(str, session.execute(text("pragma user_version")).fetchone()[0])
+        return version
 
     def set_user_version(self, version):
         """set the the db id for the sport manager used to create the DB (use with caution)"""
