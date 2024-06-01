@@ -1,21 +1,18 @@
-import sys
-import time
 import argparse
-from datetime import timedelta
 import hashlib
 import pickle
 
 from . import sqlalchemy
 from .base_test_class import BaseTestClass
 from .deep_compare import (
+    compare_dataframes,
     deep_compare,
     deep_compare_dicts,
     deep_compare_objs,
-    compare_dataframes,
     deep_compare_ordered_collections,
 )
 from .json import make_json_compatible
-from .profiler import profileit
+from .profiler import process_timer, profileit, ctx_timer
 
 
 def constant_hasher(obj, as_int=True):
@@ -26,23 +23,6 @@ def constant_hasher(obj, as_int=True):
     hash_arg = pickle.dumps(obj)
     hash_val = hashlib.md5(hash_arg)
     return int.from_bytes(hash_val.digest(), "big") if as_int else hash_val.hexdigest()
-
-
-def process_timer(timed_func):
-    """
-    decorator that prints the running time for the function it decorates.
-    """
-
-    def wrapper(*args, **kwargs):
-        _start = time.perf_counter()
-        try:
-            result = timed_func(*args, **kwargs)
-        finally:
-            elapsed = timedelta(seconds=round(time.perf_counter() - _start, 3))
-            print(f"{elapsed} elapsed", file=sys.stderr)
-        return result
-
-    return wrapper
 
 
 class ArgumentDefaultsHelpNoNoneFormatter(argparse.HelpFormatter):
@@ -64,6 +44,7 @@ class ArgumentDefaultsHelpNoNoneFormatter(argparse.HelpFormatter):
 __all__ = [
     "sqlalchemy",
     "BaseTestClass",
+    "ctx_timer",
     "deep_compare",
     "deep_compare_dicts",
     "deep_compare_objs",

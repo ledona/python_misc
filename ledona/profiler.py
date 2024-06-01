@@ -1,12 +1,11 @@
-"""
-function decorator that profiles the decorated function. based on
-https://stackoverflow.com/questions/5375624/a-decorator-that-profiles-a-method-call-and-logs-the-profiling-result
-"""
-
 import cProfile
 import pstats
-from typing import Callable, Collection, TypeVar, Any, cast
-
+import sys
+import time
+from contextlib import contextmanager
+from datetime import timedelta
+from logging import Logger
+from typing import Any, Callable, Collection, TypeVar, cast, Literal
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -18,6 +17,7 @@ def profileit(
 ):
     """
     decorator that profiles the wrapped functionchain
+    https://stackoverflow.com/questions/5375624/a-decorator-that-profiles-a-method-call-and-logs-the-profiling-result
 
     print_restrictions - passed to pstats.print_stats to restrict which profile information
         to display. A numeric entry is used to retrict to the top N or N% of entries.
@@ -43,3 +43,36 @@ def profileit(
         return cast(F, wrapper)
 
     return inner
+
+
+def process_timer(timed_func):
+    """
+    decorator that prints the running time for the function it decorates.
+    """
+
+    def wrapper(*args, **kwargs):
+        _start = time.perf_counter()
+        try:
+            result = timed_func(*args, **kwargs)
+        finally:
+            elapsed = timedelta(seconds=round(time.perf_counter() - _start, 3))
+            print(f"{elapsed} elapsed", file=sys.stderr)
+        return result
+
+    return wrapper
+
+
+@contextmanager
+def ctx_timer(
+    msg: str | None = None,
+    logger: None | Logger = None,
+    msg_format: Literal["start-end", "end"] = "start-end",
+):
+    """process timer as a context manager"""
+    log_func = logger.info if logger else print
+    if "start" in msg_format:
+        log_func("Starting timed execution %s", f": {msg}" if msg else "")
+    _start = time.perf_counter()
+    yield
+    elapsed = timedelta(seconds=round(time.perf_counter() - _start, 3))
+    log_func("Finished timed execution %s elapsed time %s", f": {msg}" if msg else "", elapsed)
