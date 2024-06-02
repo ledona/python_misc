@@ -91,6 +91,14 @@ class SQLAlchemyWrapper:
         """set the the db id for the sport manager used to create the DB (use with caution)"""
         self.execute(f"pragma user_version = {version}")
 
+    def set_readonly(self, readonly: bool):
+        self.execute(f"pragma query_only = {'true' if readonly else 'false'}")
+
+    @property
+    def is_readonly(self):
+        ro = self.execute(text("pragma query_only")).fetchone()[0]
+        return ro
+
     @property
     def verbose(self):
         return self.engine.echo
