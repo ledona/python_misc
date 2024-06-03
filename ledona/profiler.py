@@ -4,8 +4,9 @@ import sys
 import time
 from contextlib import contextmanager
 from datetime import timedelta
+from functools import wraps
 from logging import Logger
-from typing import Any, Callable, Collection, TypeVar, cast, Literal
+from typing import Any, Callable, Collection, Literal, TypeVar, cast
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -29,6 +30,7 @@ def profileit(
     def inner(func: F) -> F:
         filename = output_filename or func.__name__ + ".profile"
 
+        @wraps(func)
         def wrapper(*args, **kwargs):
             print(f"*** Running cProfile on call to '{func}' ***")
             prof = cProfile.Profile()
