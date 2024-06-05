@@ -73,8 +73,10 @@ def ctx_timer(
     """process timer as a context manager"""
     log_func = logger.info if logger else print
     if "start" in msg_format:
-        log_func("Starting timed execution %s", f": {msg}" if msg else "")
+        log_func(
+            f"Starting timed execution {': {msg}' if msg else ''}",
+        )
     _start = time.perf_counter()
     yield
     elapsed = timedelta(seconds=round(time.perf_counter() - _start, 3))
-    log_func("Finished timed execution %s elapsed time %s", f": {msg}" if msg else "", elapsed)
+    log_func(f"Finished timed execution {': {msg}' if msg else ''} elapsed time {elapsed}")
