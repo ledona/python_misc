@@ -2,12 +2,15 @@ import argparse
 import functools
 import json
 import os
-import socket
+import time
 import warnings
-from datetime import datetime
+from collections.abc import Callable
+from datetime import timedelta
+from typing import Any, Literal
 
 import requests
 
+_WEBHOOK_ENV_VAR_NAME = "LEDONA_SLACK_WEBHOOK_URL"
 _ENABLED = True
 
 
@@ -54,95 +57,77 @@ class SlackNotifyError(Exception):
     pass
 
 
+SlackNotifyCallback = Callable[
+    [
+        Literal["start", "end", "fail"],
+        tuple,
+        dict[str, Any],
+        dict[Literal["func_name", "elapsed", "returned", "exception"]],
+    ],
+    str | None,
+]
+"""
+callback sig for notify decorator
+arg1: why is the callback being executed
+arg2: the args being sent to the decorated function
+arg3: the kwargs being sent to the decorated function
+arg4: if the decorated function is finished then this is dict containing the 
+    result of the function if the
+returns: string to slack or if None then nothing
+"""
+
+
+def _default_slack_msg_func(
+    stage: Literal["start", "end", "fail"],
+    args: tuple,
+    kwargs: dict,
+    info: dict[Literal["func", "elapsed", "returned", "exception"], Any],
+):
+    return f"Function={info['func']}\n{stage=}\n{args=}\n{kwargs=}\n{info=}"
+
+
 def notify(
-    *args,
+    msg_func: SlackNotifyCallback = _default_slack_msg_func,
     webhook_url=None,
-    env_var=None,
-    additional_msg=None,
     raise_on_http_error=False,
     on_entrance=True,
     on_exit=True,
-    include_timing=True,
-    include_host=True,
-    include_args=False,
-    include_return=False,
-    include_funcname=True,
 ):
     """
     Decorator that sends a message to slack on func entrance/exit
 
-    raise_on_http_error: If true then an exception is raised if the http 
+    raise_on_http_error: If true then an exception is raised if the http
         response is not success if false, then a warning will be issued
-    include_return: If True include the return value in the exit message.\
-      Only matters if on_exit is true.. Can also be a callable that takes the return value\
-      and returns a string to include in the message
-    include_args: True will include a stringified version of args in the notifications, if set to\
-      a callable, then the function will be called with the args, and the returned string will be\
-      included in the message
     """
     assert on_entrance or on_exit, "Nothing to do, both on_exit and on_entrance are False"
-    assert (webhook_url is None) != (env_var is None), "Either provide a url XOR an env_var"
-    assert not (
-        include_return and not on_exit
-    ), "include return should not be true if on_exit is false"
-
-    url = webhook_url
+    url = webhook_url or os.environ.get(_WEBHOOK_ENV_VAR_NAME)
     if url is None:
-        if env_var not in os.environ:
-            warnings.warn(
-                f"Slack webhook url environment variable '{env_var}' is not set! "
-                "Slack notifications disabled!"
-            )
-            disable()
-        else:
-            url = os.environ[env_var]
+        warnings.warn(
+            f"Slack webhook url environment variable '{_WEBHOOK_ENV_VAR_NAME}' is not set! "
+            "Slack notifications disabled!"
+        )
+        disable()
 
-    msg_format = "" if additional_msg is None else additional_msg + " : "
-    if include_host:
-        msg_format += "host _" + socket.gethostname() + "_ "
-    msg_format += "{stage} "
-    if include_funcname:
-        msg_format += "function `{func}`"
-    if include_timing:
-        msg_format += "at _{dt}_"
-    msg_format += "."
-    if include_args is not False:
-        msg_format += "\n{args_text}"
-        # substitute a lambda function for the true value of include_args
-        if include_args is True:
-            include_args = lambda *args, **kwargs: f"args: _{args}_\nkwargs: _{kwargs}_"
+    def send_slack(msg: str):
+        r = webhook(url, text=msg)
+        if r == "disabled" or r.status_code == 200:
+            return
 
-    if include_return is True:
-        # substitute a simple lambda for the True value of include_return
-        include_return = lambda ret: f"Returned: _{ret}_"
+        err_msg = f"Non 200 response from Slack. {r}"
+        if raise_on_http_error:
+            raise SlackNotifyError(err_msg, r)
+        warnings.warn(err_msg)
 
     # actual decorator, paramaterized
     def dec_(func):
         @functools.wraps(func)
         def wrapper_notify(*args, **kwargs):
-            args_text = (
-                "\n" + (include_args(*args, **kwargs) or "") if callable(include_args) else None
-            )
-
-            start_dt = datetime.now() if include_timing else None
-
-            if on_entrance:
-                msg = msg_format.format(
-                    stage="started",
-                    func=func,
-                    dt=start_dt.strftime("%Y-%m-%d %H:%M:%S") if start_dt is not None else None,
-                    args_text=args_text,
-                    kwargs=kwargs,
-                )
-                r = webhook(url, text=msg)
-                if is_enabled() and r.status_code != 200:
-                    err_msg = f"Non 200 response from Slack. {r}"
-                    if raise_on_http_error:
-                        raise SlackNotifyError(err_msg, r)
-                    warnings.warn(err_msg)
-
+            msg = msg_func("start", args, kwargs, {"func": func})
+            if msg is not None:
+                send_slack(msg)
             func_exception = None
             result = None
+            _start = time.perf_counter()
             try:
                 result = func(*args, **kwargs)
             except BaseException as ex:
@@ -150,37 +135,21 @@ def notify(
                 raise
             finally:
                 if on_exit:
-                    end_dt = datetime.now() if include_timing else None
-                    end_msg_format = msg_format
-                    if include_timing:
-                        end_dt = datetime.now()
-                        end_msg_format += "\nElapsed time " + str(end_dt - start_dt).split(".")[0]
-                    else:
-                        end_dt = None
-
-                    stage = "exited " + (
-                        "successfully" if func_exception is None else "with an exception"
+                    elapsed = timedelta(seconds=round(time.perf_counter() - _start, 3))
+                    state = "end" if func_exception is None else "fail"
+                    msg = msg_func(
+                        state,
+                        args,
+                        kwargs,
+                        {
+                            "func": func,
+                            "exception": func_exception,
+                            "returned": result,
+                            "elapsed": elapsed,
+                        },
                     )
-                    msg = end_msg_format.format(
-                        stage=stage,
-                        func=func,
-                        dt=end_dt.strftime("%Y-%m-%d %H:%M:%S") if end_dt is not None else None,
-                        args_text=args_text,
-                        kwargs=kwargs,
-                    )
-                    if func_exception is not None:
-                        import traceback
-
-                        msg += "\n" + traceback.format_exc()
-                    elif include_return is not False:
-                        msg += "\n{}".format(include_return(result))
-
-                    r = webhook(url, text=msg)
-                    if r != "disabled" and r.status_code != 200:
-                        err_msg = f"Non 200 response from Slack. {r}"
-                        if raise_on_http_error:
-                            raise SlackNotifyError(err_msg, r)
-                        warnings.warn(err_msg)
+                    if msg is not None:
+                        send_slack(msg)
             return result
 
         return wrapper_notify
@@ -190,7 +159,8 @@ def notify(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Send a message to slack")
-    hook_url = os.environ["LEDONA_SLACK_WEBHOOK_URL"]
+    hook_url = os.environ.get(_WEBHOOK_ENV_VAR_NAME)
+    assert hook_url, f"No webhook set to environment variable '{_WEBHOOK_ENV_VAR_NAME}'"
     parser.add_argument(
         "--url",
         metavar="WEBHOOK_URL",
@@ -201,8 +171,8 @@ if __name__ == "__main__":
     parser.add_argument("msg")
     args_ = parser.parse_args()
 
-    result = webhook(args_.url, text=args_.msg)
-    if result == "disabled":
+    result_ = webhook(args_.url, text=args_.msg)
+    if result_ == "disabled":
         print("Failed to send because messaging is disabled")
     else:
-        print(f"{result.status_code}: {result.text}")
+        print(f"{result_.status_code}: {result_.text}")
