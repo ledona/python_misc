@@ -72,11 +72,12 @@ def ctx_timer(
 ):
     """process timer as a context manager"""
     log_func = cast(Callable[[str], None], logger.info if logger else print)
+    msg_postfix = " timed execution" + (f": {msg}" if msg else "")
     if "start" in msg_format:
         log_func(
-            "Starting timed execution" + (f": {msg}" if msg else ""),
+            f"Starting {msg_postfix}"
         )
     _start = time.perf_counter()
     yield
-    elapsed = timedelta(seconds=round(time.perf_counter() - _start, 3))
-    log_func(f"Finished timed execution {': {msg}' if msg else ''} elapsed time {elapsed}")
+    elapsed = str(timedelta(seconds=round(time.perf_counter() - _start, 3)))[:-3]
+    log_func(f"Finished {msg_postfix}. elapsed time {elapsed}")
