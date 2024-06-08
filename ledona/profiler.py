@@ -74,7 +74,7 @@ def ctx_timer(
     log_func = logger.info if logger else print
     if "start" in msg_format:
         log_func(
-            f"Starting timed execution {': {msg}' if msg else ''}",
+            "Starting timed execution" + (f": {msg}" if msg else ""),
         )
     _start = time.perf_counter()
     yield
