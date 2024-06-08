@@ -71,7 +71,7 @@ def ctx_timer(
     msg_format: Literal["start-end", "end"] = "start-end",
 ):
     """process timer as a context manager"""
-    log_func = logger.info if logger else print
+    log_func = cast(Callable[[str], None], logger.info if logger else print)
     if "start" in msg_format:
         log_func(
             "Starting timed execution" + (f": {msg}" if msg else ""),
