@@ -2,7 +2,9 @@ import argparse
 import functools
 import json
 import os
+import pprint
 import time
+import traceback
 import warnings
 from collections.abc import Callable
 from datetime import timedelta
@@ -83,7 +85,23 @@ def _default_slack_msg_func(
     kwargs: dict,
     info: dict[Literal["func", "elapsed", "returned", "exception"], Any],
 ):
-    return f"Function={info['func']}\n{stage=}\n{args=}\n{kwargs=}\n{info=}"
+    if stage == "end":
+        info_msg = "\n\nRETURNED:\n" + pprint.pformat(info["returned"])
+    elif stage == "fail":
+        info_msg = f"\n\n\nEXCEPTION: {info['exception']}\n" + "\n".join(
+            traceback.format_exception(info["exception"])
+        )
+    else:
+        info_msg = ""
+
+    return f"""{stage} of {info['func']}
+
+ARGS:
+{pprint.pformat(args)}\n
+
+KWARGS:
+{pprint.pformat(kwargs)}{info_msg}
+"""
 
 
 def notify(

@@ -57,7 +57,7 @@ def process_timer(timed_func):
         try:
             result = timed_func(*args, **kwargs)
         finally:
-            elapsed = timedelta(seconds=round(time.perf_counter() - _start, 3))
+            elapsed = str(timedelta(seconds=round(time.perf_counter() - _start, 3)))[:-3]
             print(f"{elapsed} elapsed", file=sys.stderr)
         return result
 
