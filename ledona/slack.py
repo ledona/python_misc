@@ -1,5 +1,4 @@
 import argparse
-import functools
 import json
 import os
 import pprint
@@ -8,7 +7,7 @@ import traceback
 import warnings
 from collections.abc import Callable
 from datetime import timedelta
-from typing import Any, Literal
+from typing import Any, Literal, Required, TypedDict, TypeVar, cast
 
 import requests
 
@@ -36,18 +35,30 @@ def disable():
     _ENABLED = False
 
 
-def webhook(url, text=None, attachments=None):
+class SlackNotifyError(Exception): ...
+
+
+def webhook(
+    url,
+    payload: dict | None = None,
+    text: str | None = None,
+    attachments: list | tuple | None = None,
+):
     """returns the requests result, or 'disabled' if slack notifications are disabled"""
     if not is_enabled():
         return "disabled"
 
-    dict_ = {}
-    if text is not None:
-        assert isinstance(text, str)
-        dict_["text"] = text
-    if attachments is not None:
-        assert isinstance(attachments, (list, tuple))
-        dict_["attachments"] = attachments
+    dict_: dict[str, dict | list | tuple | str]
+    if payload:
+        if text is not None and attachments is not None:
+            raise SlackNotifyError("if payload is not None then attachments and text must be None")
+        dict_ = payload
+    else:
+        if text is None:
+            raise SlackNotifyError("payload or text must be defined")
+        dict_ = {"text": text}
+        if attachments is not None:
+            dict_["attachments"] = attachments
 
     if len(dict_) == 0:
         raise ValueError("Nothing to send")
@@ -55,19 +66,22 @@ def webhook(url, text=None, attachments=None):
     return requests.post(url, data=json.dumps(dict_), headers={"Content-Type": "application/json"})
 
 
-class SlackNotifyError(Exception):
-    pass
+class _InfoDict(TypedDict, total=False):
+    """information dict for notify callback"""
+
+    func: Required[Callable]
+    """The function that notify is wrapping"""
+    elapsed: timedelta
+    """elapsed time to completion"""
+    returned: Any
+    """the returned value from the function"""
+    exception: BaseException
+    """the exception raised by the function"""
 
 
-SlackNotifyCallback = Callable[
-    [
-        Literal["start", "end", "fail"],
-        tuple,
-        dict[str, Any],
-        dict[Literal["func_name", "elapsed", "returned", "exception"]],
-    ],
-    str | None,
-]
+_Stage = Literal["start", "end", "fail"]
+
+SlackNotifyCallback = Callable[[_Stage, tuple, dict[str, Any], _InfoDict], str | dict | None]
 """
 callback sig for notify decorator
 arg1: why is the callback being executed
@@ -75,33 +89,37 @@ arg2: the args being sent to the decorated function
 arg3: the kwargs being sent to the decorated function
 arg4: if the decorated function is finished then this is dict containing the 
     result of the function if the
-returns: string to slack or if None then nothing
+returns: string or dict to slack or if None then nothing
 """
 
 
 def _default_slack_msg_func(
-    stage: Literal["start", "end", "fail"],
+    stage: _Stage,
     args: tuple,
     kwargs: dict,
-    info: dict[Literal["func", "elapsed", "returned", "exception"], Any],
+    info: _InfoDict,
 ):
+    msg = f"""*{stage}* of *{info['func'].__name__}(...)*
+
+*ARGS*
+
+```{pprint.pformat(args)}```
+
+*KWARGS*
+
+```{pprint.pformat(kwargs)}```"""
     if stage == "end":
-        info_msg = "\n\nRETURNED:\n" + pprint.pformat(info["returned"])
+        assert "returned" in info
+        msg += f"\n\n*RETURNED*\n`{pprint.pformat(info['returned'])}`"
     elif stage == "fail":
-        info_msg = f"\n\n\nEXCEPTION: {info['exception']}\n" + "\n".join(
-            traceback.format_exception(info["exception"])
-        )
-    else:
-        info_msg = ""
+        assert "exception" in info
+        trace = "\n".join(traceback.format_exception(info["exception"]))
+        msg += f"\n\n*EXCEPTION*: `{info['exception']}`\n```{trace}```"
 
-    return f"""{stage} of {info['func']}
+    return msg
 
-ARGS:
-{pprint.pformat(args)}\n
 
-KWARGS:
-{pprint.pformat(kwargs)}{info_msg}
-"""
+F = TypeVar("F", bound=Callable[..., Any])
 
 
 def notify(
@@ -126,8 +144,9 @@ def notify(
         )
         disable()
 
-    def send_slack(msg: str):
-        r = webhook(url, text=msg)
+    def send_slack(msg: str | dict):
+        kwargs = {"text": msg} if isinstance(msg, str) else {"payload": msg}
+        r = webhook(url, **kwargs)
         if r == "disabled" or r.status_code == 200:
             return
 
@@ -136,14 +155,15 @@ def notify(
             raise SlackNotifyError(err_msg, r)
         warnings.warn(err_msg)
 
-    # actual decorator, paramaterized
-    def dec_(func):
-        @functools.wraps(func)
+    def dec_(func: F) -> F:
         def wrapper_notify(*args, **kwargs):
+            if not is_enabled():
+                return func(*args, **kwargs)
+
             msg = msg_func("start", args, kwargs, {"func": func})
             if msg is not None:
                 send_slack(msg)
-            func_exception = None
+            func_exception: None | BaseException = None
             result = None
             _start = time.perf_counter()
             try:
@@ -155,22 +175,19 @@ def notify(
                 if on_exit:
                     elapsed = timedelta(seconds=round(time.perf_counter() - _start, 3))
                     state = "end" if func_exception is None else "fail"
-                    msg = msg_func(
-                        state,
-                        args,
-                        kwargs,
-                        {
-                            "func": func,
-                            "exception": func_exception,
-                            "returned": result,
-                            "elapsed": elapsed,
-                        },
-                    )
+                    info: _InfoDict = {
+                        "func": func,
+                        "returned": result,
+                        "elapsed": elapsed,
+                    }
+                    if func_exception:
+                        info["exception"] = func_exception
+                    msg = msg_func(state, args, kwargs, info)
                     if msg is not None:
                         send_slack(msg)
             return result
 
-        return wrapper_notify
+        return cast(F, wrapper_notify)
 
     return dec_
 
