@@ -130,7 +130,12 @@ def notify(
     on_exit=True,
 ):
     """
-    Decorator that sends a message to slack on func entrance/exit
+    Decorator that sends a message to slack on func entrance/exit.
+
+    The decorated function will have the attribute 'slack_set_enabled'
+    attached to it. this is a function that takes a boolean that will
+    override the global slack enabled state for this function for the
+    next call only
 
     raise_on_http_error: If true then an exception is raised if the http
         response is not success if false, then a warning will be issued
@@ -156,8 +161,21 @@ def notify(
         warnings.warn(err_msg)
 
     def dec_(func: F) -> F:
+        local_enabled_flag: bool | None = None
+
+        def _slack_set_enabled(enable_: bool | None):
+            nonlocal local_enabled_flag
+            local_enabled_flag = enable_
+
         def wrapper_notify(*args, **kwargs):
-            if not is_enabled():
+            nonlocal local_enabled_flag
+
+            dont_slack = (
+                not is_enabled() and local_enabled_flag is not True
+            ) or local_enabled_flag is False
+            local_enabled_flag = None
+            if dont_slack:
+                local_enabled_flag = None
                 return func(*args, **kwargs)
 
             msg = msg_func("start", args, kwargs, {"func": func})
@@ -187,6 +205,7 @@ def notify(
                         send_slack(msg)
             return result
 
+        setattr(wrapper_notify, "slack_set_enabled", _slack_set_enabled)
         return cast(F, wrapper_notify)
 
     return dec_
