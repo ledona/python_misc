@@ -133,9 +133,9 @@ def compare_dataframes(
         kwargs = dict(assert_frame_equal_kwargs)
         if "check_names" not in kwargs:
             kwargs["check_names"] = True
-        pd.testing.assert_frame_equal(
-            df1, df2, obj=(msg + " dataframes") if msg is not None else None, **kwargs
-        )
+        if msg is not None:
+            kwargs["obj"] = msg + " dataframes"
+        pd.testing.assert_frame_equal(df1, df2, **kwargs)
     except AssertionError:
         if assert_tests:
             raise
@@ -190,20 +190,27 @@ def deep_compare_ordered_collections(objs1, objs2, msg="", assert_tests=True):
     except AssertionError:
         if assert_tests:
             raise
-        else:
-            return False
+        return False
 
     return True
 
 
 def deep_compare_dicts(
-    dict1, dict2, msg="", key_names=None, assert_tests=True, minimal_key_test=False
+    dict1: dict,
+    dict2: dict,
+    msg="",
+    assert_tests=True,
+    key_names: list[str] | None = None,
+    minimal_key_test=False,
+    ignore_keys: list[str] | None = None,
 ) -> bool:
     """
     assert_tests: if true then comparison failures will raise assertion errors
-    minimal_test: if true then only compare values for keys in key_names, or if key_names is None
-       only compare values for keys in dict1. all other keys are ignored,
-       if false then dicts must have the same set of keys
+    minimal_test: if true then only compare values for keys in key_names, or\
+        if key_names is None only compare values for keys in dict1. all other\
+        keys are ignored, if false then dicts must have the same set of keys
+    ignore_keys: only test keys NOT in this list, cannot be used with\
+        minimal_key_test or key_names
 
     returns: true if the dicts match, false otherwise
     raises ValueError if testing is true and a mismatch is found
@@ -211,14 +218,16 @@ def deep_compare_dicts(
     if not __debug__ and assert_tests is True:
         raise ValueError("assert_tests cannot be true in optimized/non debug mode")
 
-    assert isinstance(dict1, dict)
-    assert isinstance(dict2, dict)
+    assert isinstance(dict1, dict), "dict1 should be a dict"
+    assert isinstance(dict2, dict), "dict2 should be a dict"
 
     if msg is not None:
         msg += " :: "
 
     try:
         if minimal_key_test:
+            if ignore_keys is not None:
+                raise ValueError("ignore_keys cannot be used with minimal_key_test")
             if key_names is None:
                 key_names_set = set(dict1.keys())
             else:
@@ -230,8 +239,16 @@ def deep_compare_dicts(
             assert key_names_set <= set(dict2.keys()), (
                 msg + f": dict2 does not have keys {key_names_set - set(dict2.keys())}"
             )
+        elif key_names is not None:
+            raise ValueError("If minimal_key_test is False key_names must be None")
         else:
-            assert (key_names_set := set(dict1.keys())) == (d2_keys := set(dict2.keys())), (
+            key_names_set = set(dict1.keys())
+            d2_keys = set(dict2.keys())
+            if ignore_keys:
+                for key in ignore_keys:
+                    key_names_set.discard(key)
+                    d2_keys.discard(key)
+            assert key_names_set == d2_keys, (
                 msg + ": dict keys don't match. "
                 f"Keys in dict1 and missing from dict2 = {key_names_set - d2_keys}. "
                 f"Keys in dict2 and missing from dict1 = {d2_keys - key_names_set}"
@@ -244,7 +261,7 @@ def deep_compare_dicts(
                 dict1[key_name],
                 dict2[key_name],
                 assert_tests=True,
-                msg=msg + "dict1['{key_name}'] != dict2['{key_name}']".format(key_name=key_name),
+                msg=msg + f"dict1['{key_name}'] != dict2['{key_name}']",
             )
     except AssertionError:
         if assert_tests:
