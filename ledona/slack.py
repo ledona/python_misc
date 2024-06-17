@@ -40,7 +40,7 @@ class SlackNotifyError(Exception): ...
 
 def webhook(
     url,
-    payload: dict | None = None,
+    payload: dict[str, dict | list | tuple | str] | None = None,
     text: str | None = None,
     attachments: list | tuple | None = None,
 ):
@@ -48,7 +48,6 @@ def webhook(
     if not is_enabled():
         return "disabled"
 
-    dict_: dict[str, dict | list | tuple | str]
     if payload:
         if text is not None and attachments is not None:
             raise SlackNotifyError("if payload is not None then attachments and text must be None")
@@ -64,6 +63,30 @@ def webhook(
         raise ValueError("Nothing to send")
 
     return requests.post(url, data=json.dumps(dict_), headers={"Content-Type": "application/json"})
+
+
+def send_slack(msg: str | dict, webhook_url: str | None = None):
+    """send a single message"""
+    if not is_enabled():
+        return
+    url = webhook_url or os.environ.get(_WEBHOOK_ENV_VAR_NAME)
+    if url is None:
+        warnings.warn(
+            f"Slack webhook url environment variable '{_WEBHOOK_ENV_VAR_NAME}' is not set! "
+            "Slack notifications disabled!"
+        )
+        disable()
+        return
+
+    kwargs = {"text": msg} if isinstance(msg, str) else {"payload": msg}
+    r = webhook(url, **kwargs)
+    if r == "disabled" or r.status_code == 200:
+        return
+
+    err_msg = f"Non 200 response from Slack. {r}"
+    if raise_on_http_error:
+        raise SlackNotifyError(err_msg, r)
+    warnings.warn(err_msg)
 
 
 class _InfoDict(TypedDict, total=False):
@@ -141,24 +164,6 @@ def notify(
         response is not success if false, then a warning will be issued
     """
     assert on_entrance or on_exit, "Nothing to do, both on_exit and on_entrance are False"
-    url = webhook_url or os.environ.get(_WEBHOOK_ENV_VAR_NAME)
-    if url is None:
-        warnings.warn(
-            f"Slack webhook url environment variable '{_WEBHOOK_ENV_VAR_NAME}' is not set! "
-            "Slack notifications disabled!"
-        )
-        disable()
-
-    def send_slack(msg: str | dict):
-        kwargs = {"text": msg} if isinstance(msg, str) else {"payload": msg}
-        r = webhook(url, **kwargs)
-        if r == "disabled" or r.status_code == 200:
-            return
-
-        err_msg = f"Non 200 response from Slack. {r}"
-        if raise_on_http_error:
-            raise SlackNotifyError(err_msg, r)
-        warnings.warn(err_msg)
 
     def dec_(func: F) -> F:
         local_enabled_flag: bool | None = None
@@ -180,7 +185,7 @@ def notify(
 
             msg = msg_func("start", args, kwargs, {"func": func})
             if msg is not None:
-                send_slack(msg)
+                send_slack(msg, webhook_url=webhook_url)
             func_exception: None | BaseException = None
             result = None
             _start = time.perf_counter()
