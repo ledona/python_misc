@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import pprint
+import socket
 import time
 import traceback
 import warnings
@@ -13,6 +14,15 @@ import requests
 
 _WEBHOOK_ENV_VAR_NAME = "LEDONA_SLACK_WEBHOOK_URL"
 _ENABLED = True
+_HOSTNAME = None
+"""cache of the host name if it is ever needed when sending a message"""
+
+
+def _get_hostname():
+    global _HOSTNAME
+    if _HOSTNAME is None:
+        _HOSTNAME = socket.gethostname()
+    return _HOSTNAME
 
 
 def is_enabled():
@@ -65,8 +75,19 @@ def webhook(
     return requests.post(url, data=json.dumps(dict_), headers={"Content-Type": "application/json"})
 
 
-def send_slack(msg: str | dict, webhook_url: str | None = None):
-    """send a single message"""
+def send_slack(
+    msg: str | dict,
+    webhook_url: str | None = None,
+    include_hostname=True,
+    raise_on_http_error=False,
+):
+    """
+    send a message to slack
+
+    include_hostname: if true include the hostname in the message
+    raise_on_http_error: If true then an exception is raised if the http
+        response is not success if false, then a warning will be issued
+    """
     if not is_enabled():
         return
     url = webhook_url or os.environ.get(_WEBHOOK_ENV_VAR_NAME)
@@ -78,7 +99,18 @@ def send_slack(msg: str | dict, webhook_url: str | None = None):
         disable()
         return
 
-    kwargs = {"text": msg} if isinstance(msg, str) else {"payload": msg}
+    kwargs: dict[str, Any]
+    if isinstance(msg, str):
+        kwargs = {"text": (f"[{_get_hostname()}] " if include_hostname else "") + msg}
+    elif not include_hostname:
+        kwargs = {"payload": msg}
+    else:
+        # include hostname and msg is a dict
+        payload = msg.copy()
+        payload["text"] = f"[{_get_hostname()}]" + (
+            (" " + payload["text"]) if "text" in payload else ""
+        )
+        kwargs = {"payload": payload}
     r = webhook(url, **kwargs)
     if r == "disabled" or r.status_code == 200:
         return
@@ -159,9 +191,6 @@ def notify(
     attached to it. this is a function that takes a boolean that will
     override the global slack enabled state for this function for the
     next call only
-
-    raise_on_http_error: If true then an exception is raised if the http
-        response is not success if false, then a warning will be issued
     """
     assert on_entrance or on_exit, "Nothing to do, both on_exit and on_entrance are False"
 
@@ -185,7 +214,7 @@ def notify(
 
             msg = msg_func("start", args, kwargs, {"func": func})
             if msg is not None:
-                send_slack(msg, webhook_url=webhook_url)
+                send_slack(msg, raise_on_http_error=raise_on_http_error, webhook_url=webhook_url)
             func_exception: None | BaseException = None
             result = None
             _start = time.perf_counter()
