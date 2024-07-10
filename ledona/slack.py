@@ -111,7 +111,17 @@ def send_slack(
             (" " + payload["text"]) if "text" in payload else ""
         )
         kwargs = {"payload": payload}
-    r = webhook(url, **kwargs)
+    try:
+        r = webhook(url, **kwargs)
+    except Exception as ex:
+        if raise_on_http_error:
+            raise
+        warnings.warn(
+            f"Unhandled webhook call exception: {ex}\n"
+            + traceback.format_exc(limit=None, chain=True)
+        )
+        return
+
     if r == "disabled" or r.status_code == 200:
         return
 
