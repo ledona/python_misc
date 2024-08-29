@@ -32,7 +32,7 @@ def deep_compare(first, second, msg=None, assert_tests=True) -> bool:
         deep_compare_ordered_collections(first, second, msg=(msg or ""), assert_tests=assert_tests)
     else:
         try:
-            assert first == second, msg + f" :: {first=} != {second=}"
+            assert first == second, f"{msg} :: {first=} != {second=}"
         except AssertionError:
             if assert_tests:
                 raise
