@@ -117,12 +117,12 @@ def compare_dataframes(
             sort_by = sorted(df1.columns)
             if not ignore_index:
                 if isinstance(df1.index, pd.MultiIndex):
-                    sort_by += df1.index.names
+                    sort_by = [*df1.index.names, *sort_by]
                 else:
                     if df1.index.name is None:
                         df1.index.name = "INDEX"
                         df2.index.name = "INDEX"
-                    sort_by.append(df1.index.name)
+                    sort_by.insert(0, df1.index.name)
             df1 = df1.sort_values(by=sort_by)
             df2 = df2.sort_values(by=sort_by)
 
@@ -136,9 +136,9 @@ def compare_dataframes(
         if msg is not None:
             kwargs["obj"] = msg + " dataframes"
         pd.testing.assert_frame_equal(df1, df2, **kwargs)
-    except AssertionError:
+    except AssertionError as ex:
         if assert_tests:
-            raise
+            assert False, ex
         return False
 
     return True
