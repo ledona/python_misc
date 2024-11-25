@@ -68,25 +68,25 @@ class BaseTestClass(unittest.TestCase):
                 obj1, obj2, attr_names, msg + f": items {i} don't match"
             )
 
-    def assertEqual(self, first, second, msg=None):
+    def assertEqual(self, data, expected_data, msg=None):
         """
         convenience method that will call the data frame equality test if first and
         second are data fromes
         """
-        if isinstance(first, pandas.DataFrame) and isinstance(second, pandas.DataFrame):
-            return self.assertDataFrameEqual(first, second, msg=msg)
+        if isinstance(data, pandas.DataFrame) and isinstance(expected_data, pandas.DataFrame):
+            return self.assertDataFrameEqual(data, expected_data, msg=msg)
 
-        if isinstance(first, pandas.Series) and isinstance(second, pandas.Series):
-            return pandas.testing.assert_series_equal(first, second, obj=msg)
+        if isinstance(data, pandas.Series) and isinstance(expected_data, pandas.Series):
+            return pandas.testing.assert_series_equal(data, expected_data, obj=msg)
 
-        if isinstance(first, MagicMock):
-            return self.compare_obj_obj(first, second, first.keys(), msg=(msg or ""))
+        if isinstance(data, MagicMock):
+            return self.compare_obj_obj(data, expected_data, data.keys(), msg=(msg or ""))
 
-        if isinstance(first, dict) and isinstance(second, dict):
-            self.assertEqual(set(first.keys()), set(second.keys()), msg)
-            return self.compare_dict_dict(first, second, msg=(msg or ""))
+        if isinstance(data, dict) and isinstance(expected_data, dict):
+            self.assertEqual(set(data.keys()), set(expected_data.keys()), msg)
+            return self.compare_dict_dict(data, expected_data, msg=(msg or ""))
 
-        return super().assertEqual(first, second, msg)
+        return super().assertEqual(data, expected_data, msg)
 
     def compare_dict_dict(self, dict1, dict2, msg="", key_names=None):
         """
