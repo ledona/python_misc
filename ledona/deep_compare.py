@@ -254,14 +254,24 @@ def deep_compare_dicts(
                 f"Keys in dict2 and missing from dict1 = {d2_keys - key_names_set}"
             )
 
+        mismatches = []
         for key_name in key_names_set:
             assert key_name in dict1, msg + f": {key_name=} not in dict1"
             assert key_name in dict2, msg + f": {key_name=} not in dict2"
-            deep_compare(
+            if not deep_compare(
                 dict1[key_name],
                 dict2[key_name],
-                assert_tests=True,
-                msg=msg + f"dict1['{key_name}'] != dict2['{key_name}']",
+                assert_tests=False,
+            ):
+                mismatches.append((key_name, dict1[key_name], dict2[key_name]))
+
+        if mismatches:
+            mismatch_details = "\n".join([
+                f"  {key}: dict1={val1!r}, dict2={val2!r}"
+                for key, val1, val2 in mismatches
+            ])
+            raise AssertionError(
+                f"{msg}{len(mismatches)} key(s) with mismatched values:\n{mismatch_details}"
             )
     except AssertionError:
         if assert_tests:
