@@ -31,8 +31,7 @@ class BaseTestClass(unittest.TestCase):
             self.assertEqual(
                 df1.columns.tolist(),
                 df2.columns.tolist(),
-                ((msg + " :: ") if msg is not None else "")
-                + "column names don't match",
+                ((msg + " :: ") if msg is not None else "") + "column names don't match",
             )
         pandas.testing.assert_frame_equal(df1, df2, check_names=True, obj=msg)
 
@@ -50,10 +49,7 @@ class BaseTestClass(unittest.TestCase):
             self.assertEqual(
                 getattr(obj1, attr_name),
                 getattr(obj2, attr_name),
-                msg
-                + " >> obj1.{attr_name} != obj2.{attr_name}".format(
-                    attr_name=attr_name
-                ),
+                msg + " >> obj1.{attr_name} != obj2.{attr_name}".format(attr_name=attr_name),
             )
 
     def compare_objs_objs(self, objs1, objs2, attr_names, msg=""):
@@ -64,9 +60,7 @@ class BaseTestClass(unittest.TestCase):
             msg + f": lengths do not match. {len(objs1)=}, {len(objs2)=}",
         )
         for i, (obj1, obj2) in enumerate(zip(objs1, objs2)):
-            self.compare_obj_obj(
-                obj1, obj2, attr_names, msg + f": items {i} don't match"
-            )
+            self.compare_obj_obj(obj1, obj2, attr_names, msg + f": items {i} don't match")
 
     def assertEqual(self, data, expected_data, msg=None):
         """
@@ -83,7 +77,7 @@ class BaseTestClass(unittest.TestCase):
             return self.compare_obj_obj(data, expected_data, data.keys(), msg=(msg or ""))
 
         if isinstance(data, dict) and isinstance(expected_data, dict):
-            self.assertEqual(set(data.keys()), set(expected_data.keys()), msg)
+            assert data.keys() == expected_data.keys(), msg
             return self.compare_dict_dict(data, expected_data, msg=(msg or ""))
 
         return super().assertEqual(data, expected_data, msg)
@@ -99,17 +93,10 @@ class BaseTestClass(unittest.TestCase):
         if msg is not None:
             msg += " :: "
         for key_name in key_names or dict1.keys():
-            self.assertIn(
-                key_name, dict1, msg + f": dict1 does not have key '{key_name}'"
-            )
-            self.assertIn(
-                key_name, dict2, msg + f": dict2 does not have key '{key_name}'"
-            )
+            self.assertIn(key_name, dict1, msg + f": dict1 does not have key '{key_name}'")
+            self.assertIn(key_name, dict2, msg + f": dict2 does not have key '{key_name}'")
             self.assertEqual(
                 dict1[key_name],
                 dict2[key_name],
-                msg
-                + "dict1['{key_name}'] != dict2['{key_name}']".format(
-                    key_name=key_name
-                ),
+                msg + "dict1['{key_name}'] != dict2['{key_name}']".format(key_name=key_name),
             )

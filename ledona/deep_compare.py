@@ -81,23 +81,23 @@ def compare_dataframes(
                 raise ValueError("Cannot specify cols and test col order")
             # trim the result to the columns to test
             cols_as_set = set(cols) if not isinstance(cols, set) else cols
-            assert (
-                len(missing_cols := cols_as_set - set(df1.columns)) == 0
-            ), f"Not all the requested cols are in df1. {missing_cols=}"
-            assert (
-                len(missing_cols := cols_as_set - set(df2.columns)) == 0
-            ), f"Not all the requested cols are in df2. {missing_cols=}"
+            assert len(missing_cols := cols_as_set - set(df1.columns)) == 0, (
+                f"Not all the requested cols are in df1. {missing_cols=}"
+            )
+            assert len(missing_cols := cols_as_set - set(df2.columns)) == 0, (
+                f"Not all the requested cols are in df2. {missing_cols=}"
+            )
             df1 = df1[cols]
             df2 = df2[cols]
         elif not ignore_col_order:
-            assert list(df1.columns) == list(
-                df2.columns
-            ), "The order of the columns does not match. {df1.columns=} {df2.columns=}"
+            assert list(df1.columns) == list(df2.columns), (
+                "The order of the columns does not match. {df1.columns=} {df2.columns=}"
+            )
         else:
             assert set(df1.columns) == set(df2.columns), (
                 "column names don't match. "
-                f"{set(df1.columns) - set(df2.columns)} in df1 and not in df2. "
-                f"{set(df2.columns) - set(df1.columns)} in df2 and not in df1"
+                f"{set(df1.columns).difference(df2.columns)} in df1 and not in df2. "
+                f"{set(df2.columns).difference(df1.columns)} in df2 and not in df1"
             )
             # sort both by column name
             df1 = df1[sorted(df1.columns)]
@@ -229,15 +229,15 @@ def deep_compare_dicts(
             if ignore_keys is not None:
                 raise ValueError("ignore_keys cannot be used with minimal_key_test")
             if key_names is None:
-                key_names_set = set(dict1.keys())
+                key_names_set = dict1.keys()
             else:
                 key_names_set = set(key_names)
 
-            assert key_names_set <= set(dict1.keys()), (
-                msg + f": dict1 does not have keys {key_names_set - set(dict1.keys())}"
+            assert key_names_set <= dict1.keys(), (
+                msg + f": dict1 does not have keys {key_names_set - dict1.keys()}"
             )
-            assert key_names_set <= set(dict2.keys()), (
-                msg + f": dict2 does not have keys {key_names_set - set(dict2.keys())}"
+            assert key_names_set <= dict2.keys(), (
+                msg + f": dict2 does not have keys {key_names_set - dict2.keys()}"
             )
         elif key_names is not None:
             raise ValueError("If minimal_key_test is False key_names must be None")
@@ -266,10 +266,9 @@ def deep_compare_dicts(
                 mismatches.append((key_name, dict1[key_name], dict2[key_name]))
 
         if mismatches:
-            mismatch_details = "\n".join([
-                f"  {key}: dict1={val1!r}, dict2={val2!r}"
-                for key, val1, val2 in mismatches
-            ])
+            mismatch_details = "\n".join(
+                [f"  {key}: dict1={val1!r}, dict2={val2!r}" for key, val1, val2 in mismatches]
+            )
             raise AssertionError(
                 f"{msg}{len(mismatches)} key(s) with mismatched values:\n{mismatch_details}"
             )
