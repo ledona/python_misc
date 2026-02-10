@@ -111,9 +111,6 @@ def compare_dataframes(
                 assert df1.index.names == df2.index.names
             else:
                 assert df1.index.name == df2.index.name
-        else:
-            df1 = df1.reset_index(drop=True)
-            df2 = df2.reset_index(drop=True)
 
         if ignore_row_order is True:
             # sort the dataframes
@@ -128,6 +125,10 @@ def compare_dataframes(
                     sort_by.insert(0, df1.index.name)
             df1 = df1.sort_values(by=sort_by)
             df2 = df2.sort_values(by=sort_by)
+
+        if ignore_index:
+            df1 = df1.reset_index(drop=True)
+            df2 = df2.reset_index(drop=True)
 
         kwargs = dict(assert_frame_equal_kwargs)
         if "check_names" not in kwargs:
