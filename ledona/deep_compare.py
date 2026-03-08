@@ -50,11 +50,11 @@ def compare_dataframes(
     ignore_row_order: bool = True,
     ignore_index: bool = False,
     assert_tests: bool = True,
+    check_types: bool = True,
     **assert_frame_equal_kwargs,
 ) -> bool:
     """
-    compare 2 dataframes, column types must match, expect an error with 'dtype' are different
-    if column types don't match
+    compare 2 dataframes, uses pandas.testing.assert_frame_equal
 
     ignore_index - if true then dataframe indices will be reset, and the old index will be
        dropped before comparing
@@ -62,11 +62,15 @@ def compare_dataframes(
     ignore_row_order - if true then both dataframes will be sorted before comparison
     cols - Only compare these columns of data, otherwise both dataframes must have the same
        columns
+    check_types: passed to the pandas.testing.assert_frame_equal as the check_dtype kwarg
     assert_tests - if an internal comparison fails then raise an AssertionError (this allows for the
                    specific inequality to be surfaced)
     returns - true if they are equivalent, false if not (if assert_tests is True then an inequality
         will result in an AssertionError instead of a returned False)
     """
+    if "check_dtype" in assert_frame_equal_kwargs:
+        raise ValueError("Don't use the check_dtypes kwarg, instead use check_types")
+
     try:
         if msg is not None and "obj" in assert_frame_equal_kwargs:
             raise ValueError("'msg' and 'obj' keyword args cannot be used together")
@@ -135,7 +139,7 @@ def compare_dataframes(
             kwargs["check_names"] = True
         if msg is not None:
             kwargs["obj"] = msg + " dataframes"
-        pd.testing.assert_frame_equal(df1, df2, **kwargs)
+        pd.testing.assert_frame_equal(df1, df2, check_dtype=check_types, **kwargs)
     except AssertionError as ex:
         if assert_tests:
             assert False, ex
