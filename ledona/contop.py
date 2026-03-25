@@ -58,6 +58,8 @@ def _fmt_cores(cores: list[int]) -> str:
 
 def _fmt_bytes(n: int) -> str:
     v: float = n
+    if n == 0:
+        return "0.0"
     for unit in ("B", "KB", "MB", "GB", "TB"):
         if v < 1024:
             return f"{v:.1f}{unit}"
@@ -119,6 +121,22 @@ def _spark_chars(values: list[float], bar_width: int, max_history: int) -> list[
         idx = min(len(_SPARK_CHARS) - 1, round(pct / 100 * (len(_SPARK_CHARS) - 1)))
         result.append((_SPARK_CHARS[idx], pct))
     return result
+
+
+def _fmt_uptime() -> str:
+    try:
+        with open("/proc/uptime") as f:
+            secs = int(float(f.read().split()[0]))
+    except OSError:
+        return "up ?"
+    days, rem = divmod(secs, 86400)
+    hours, rem = divmod(rem, 3600)
+    mins = rem // 60
+    if days:
+        return f"up {days}d {hours}h {mins}m"
+    if hours:
+        return f"up {hours}h {mins}m"
+    return f"up {mins}m"
 
 
 def _ruler(bar_width: int, max_history: int) -> str:
@@ -259,6 +277,49 @@ class _Monitor:
             pass
         return None
 
+    @staticmethod
+    def _system_swap() -> tuple[int, int]:
+        """Returns (swap_used, swap_total) from /proc/meminfo."""
+        total = free = 0
+        try:
+            with open("/proc/meminfo") as f:
+                for line in f:
+                    parts = line.split()
+                    if parts[0] == "SwapTotal:":
+                        total = int(parts[1]) * 1024
+                    elif parts[0] == "SwapFree:":
+                        free = int(parts[1]) * 1024
+        except OSError:
+            pass
+        return total - free, total
+
+    def _get_swap(self) -> tuple[int, int]:
+        """Returns (swap_used_bytes, swap_total_bytes)."""
+        try:
+            if self.cgroup_ver == 2 and os.path.exists("/sys/fs/cgroup/memory.swap.current"):
+                with open("/sys/fs/cgroup/memory.swap.current") as f:
+                    used = int(f.read().strip())
+                total = None
+                if os.path.exists("/sys/fs/cgroup/memory.swap.max"):
+                    with open("/sys/fs/cgroup/memory.swap.max") as f:
+                        content = f.read().strip()
+                        if content != "max":
+                            total = int(content)
+                _, sys_total = self._system_swap()
+                return used, total or sys_total or 1
+            if self.cgroup_ver == 1 and os.path.exists(
+                "/sys/fs/cgroup/memory/memory.memsw.usage_in_bytes"
+            ):
+                with open("/sys/fs/cgroup/memory/memory.memsw.usage_in_bytes") as f:
+                    memsw_used = int(f.read().strip())
+                with open(_CGROUP_V1_MEM_USAGE) as f:
+                    mem_used = int(f.read().strip())
+                _, sys_total = self._system_swap()
+                return max(0, memsw_used - mem_used), sys_total or 1
+        except OSError:
+            pass
+        return self._system_swap()
+
     def _get_memory(self) -> tuple[int, int]:
         """Returns (used_bytes, limit_bytes); limit falls back to system total."""
         try:
@@ -314,32 +375,42 @@ class _Monitor:
             pcts = self._calc_pct(s1, s2, (t2 - t1) * 1e9)
             smoothed = self._smooth(pcts)
             mem_used, mem_limit = self._get_memory()
+            swap_used, swap_total = self._get_swap()
             s1, t1 = s2, t2
 
             avg_cpu = sum(smoothed.values()) / len(smoothed) if smoothed else 0.0
             mem_pct = mem_used / mem_limit * 100
+            swap_pct = swap_used / swap_total * 100 if swap_total else 0.0
             self._record_history(avg_cpu, mem_pct)
 
             stdscr.erase()
             height, width = stdscr.getmaxyx()
 
-            # Row 0: title — "contop" on left, "hostname  datetime" on right
+            # Row 0: title left, datetime right
             now = time.strftime("%Y-%m-%d %H:%M:%S")
-            right = f"{self.hostname}  {now}"
             try:
                 stdscr.addstr(0, 0, "contop - container aware cpu/memory usage", curses.A_BOLD)
-                if width > len(right) + 8:
-                    stdscr.addstr(0, width - len(right) - 1, right)
+                if width > len(now) + 8:
+                    stdscr.addstr(0, width - len(now) - 1, now)
             except curses.error:
                 pass
 
-            # Row 1: separator
+            # Row 1: hostname left, uptime right
+            uptime = _fmt_uptime()
             try:
-                stdscr.addstr(1, 0, "─" * (width - 1))
+                stdscr.addstr(1, 0, self.hostname)
+                if width > len(uptime) + 2:
+                    stdscr.addstr(1, width - len(uptime) - 1, uptime)
             except curses.error:
                 pass
 
-            # Row 2: info section
+            # Row 2: separator
+            try:
+                stdscr.addstr(2, 0, "─" * (width - 1))
+            except curses.error:
+                pass
+
+            # Row 3: info section
             cgroup_str = f"cgroup v{self.cgroup_ver}" if self.cgroup_ver else "host"
             n_cores = len(self.assigned_cores)
             cores_str = (
@@ -347,23 +418,31 @@ class _Monitor:
                 if self.cgroup_ver
                 else f"{n_cores} cores"
             )
-            info = (
-                f"{cgroup_str}  |  {self.hostname}  |  {cores_str}"
+            if swap_total:
+                swap_str = f"{_fmt_bytes(swap_used)}/{_fmt_bytes(swap_total)} ({swap_pct:.1f}%)"
+            else:
+                swap_str = "0 Swp"
+            info_prefix = (
+                f"{cgroup_str}  |  {cores_str}"
                 f"  |  CPU: {avg_cpu:.1f}%"
-                f"  |  Mem: {_fmt_bytes(mem_used)} / {_fmt_bytes(mem_limit)} ({mem_pct:.1f}%)"
+                f"  |  Mem: {_fmt_bytes(mem_used)}/{_fmt_bytes(mem_limit)}"
+                f"  |  Swap: "
             )
             try:
-                stdscr.addstr(2, 0, info[: width - 1])
+                stdscr.addstr(3, 0, info_prefix[: width - 1])
+                col = len(info_prefix)
+                if col < width - 1:
+                    stdscr.addstr(3, col, swap_str[: width - 1 - col], _color_attr(swap_pct))
             except curses.error:
                 pass
 
-            # Row 3: separator
+            # Row 4: separator
             try:
-                stdscr.addstr(3, 0, "─" * (width - 1))
+                stdscr.addstr(4, 0, "─" * (width - 1))
             except curses.error:
                 pass
 
-            row = 4
+            row = 5
 
             # Sparklines — same width as the memory bar below
             # label "CPU " (4) + " [" (2) + "]" (1) = 7 overhead
