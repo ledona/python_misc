@@ -2,6 +2,7 @@
 
 import argparse
 import curses
+import getpass
 import os
 import socket
 import time
@@ -67,9 +68,15 @@ def _fmt_bytes(n: int) -> str:
     return f"{v:.1f}PB"
 
 
+def _fmt_pct(pct: float) -> str:
+    if 0.2 <= pct < 1:
+        return " <1%"
+    return f"{round(pct):3d}%"
+
+
 def _bar(pct: float, width: int) -> str:
     filled = int(pct / 100 * width)
-    return "#" * filled + "." * (width - filled)
+    return "|" * filled + "." * (width - filled)
 
 
 def _color_attr(pct: float) -> int:
@@ -87,7 +94,7 @@ def _draw_bar(stdscr: curses.window, row: int, col: int, label: str, bar_width: 
     try:
         stdscr.addstr(row, col, f"{label} [")
         stdscr.addstr(_bar(pct, bar_width), _color_attr(pct))
-        stdscr.addstr(f"] {pct:5.1f}%")
+        stdscr.addstr(f"] {_fmt_pct(pct)}")
     except curses.error:
         pass
 
@@ -123,12 +130,7 @@ def _spark_chars(values: list[float], bar_width: int, max_history: int) -> list[
     return result
 
 
-def _fmt_uptime() -> str:
-    try:
-        with open("/proc/uptime") as f:
-            secs = int(float(f.read().split()[0]))
-    except OSError:
-        return "up ?"
+def _fmt_uptime_secs(secs: int) -> str:
     days, rem = divmod(secs, 86400)
     hours, rem = divmod(rem, 3600)
     mins = rem // 60
@@ -137,6 +139,33 @@ def _fmt_uptime() -> str:
     if hours:
         return f"up {hours}h {mins}m"
     return f"up {mins}m"
+
+
+def _fmt_uptime() -> str:
+    try:
+        with open("/proc/uptime") as f:
+            secs = int(float(f.read().split()[0]))
+    except OSError:
+        return "up ?"
+    return _fmt_uptime_secs(secs)
+
+
+def _fmt_container_uptime() -> str:
+    """Estimate container uptime from PID 1 start time relative to host boot."""
+    try:
+        with open("/proc/uptime") as f:
+            host_uptime = float(f.read().split()[0])
+        with open("/proc/1/stat") as f:
+            content = f.read()
+        # comm field (field 2) may contain spaces/parens; find last ')' to safely split
+        fields_after = content[content.rfind(")") + 2:].split()
+        # starttime is field 22 in /proc/pid/stat (1-indexed), index 19 after comm+state
+        starttime_ticks = int(fields_after[19])
+        clk_tck = os.sysconf("SC_CLK_TCK")
+        secs = max(0, int(host_uptime - starttime_ticks / clk_tck))
+    except (OSError, IndexError, ValueError):
+        return _fmt_uptime()
+    return _fmt_uptime_secs(secs)
 
 
 def _ruler(bar_width: int, max_history: int) -> str:
@@ -202,6 +231,7 @@ class _Monitor:
         self.assigned_cores = self._get_assigned_cores()
         self._smoothed: dict[int, float] = {}
         self.hostname = socket.gethostname()
+        self.username = getpass.getuser()
         self.max_history = history_seconds
         self._cpu_history: list[float] = []
         self._mem_history: list[float] = []
@@ -366,6 +396,7 @@ class _Monitor:
 
         s1 = self._sample_cpu()
         t1 = time.monotonic()
+        force_clear = False
 
         while True:
             time.sleep(1)
@@ -383,7 +414,11 @@ class _Monitor:
             swap_pct = swap_used / swap_total * 100 if swap_total else 0.0
             self._record_history(avg_cpu, mem_pct)
 
-            stdscr.erase()
+            if force_clear:
+                stdscr.clear()
+                force_clear = False
+            else:
+                stdscr.erase()
             height, width = stdscr.getmaxyx()
 
             # Row 0: title left, datetime right
@@ -396,9 +431,9 @@ class _Monitor:
                 pass
 
             # Row 1: hostname left, uptime right
-            uptime = _fmt_uptime()
+            uptime = ("ctr " + _fmt_container_uptime()) if self.cgroup_ver else ("host " + _fmt_uptime())
             try:
-                stdscr.addstr(1, 0, self.hostname)
+                stdscr.addstr(1, 0, f"{self.username}@{self.hostname}")
                 if width > len(uptime) + 2:
                     stdscr.addstr(1, width - len(uptime) - 1, uptime)
             except curses.error:
@@ -406,19 +441,15 @@ class _Monitor:
 
             # Row 2: separator
             try:
-                stdscr.addstr(2, 0, "─" * (width - 1))
+                stdscr.addstr(2, 0, "╌" * (width - 1))
             except curses.error:
                 pass
 
             # Row 3: info section
             cgroup_str = f"cgroup v{self.cgroup_ver}" if self.cgroup_ver else "host"
             n_cores = len(self.assigned_cores)
-            cores_str = (
-                f"{n_cores} cores [{_fmt_cores(self.assigned_cores)}]"
-                if self.cgroup_ver
-                else f"{n_cores} cores"
-            )
-            if swap_total:
+            cores_str = f"{n_cores} cores"
+            if swap_total >= 100 * 1024:
                 swap_str = f"{_fmt_bytes(swap_used)}/{_fmt_bytes(swap_total)} ({swap_pct:.1f}%)"
             else:
                 swap_str = "0 Swp"
@@ -438,7 +469,7 @@ class _Monitor:
 
             # Row 4: separator
             try:
-                stdscr.addstr(4, 0, "─" * (width - 1))
+                stdscr.addstr(4, 0, "╌" * (width - 1))
             except curses.error:
                 pass
 
@@ -463,28 +494,32 @@ class _Monitor:
             row += 2
 
             # Memory bar — full width
-            # label "Mem " (4) + " [" (2) + "] NNN.N%" (8) = 14 overhead
-            bar_w_mem = max(10, width - 15)
+            # label "Mem " (4) + " [" (2) + "] NNN%" (6) = 12 overhead
+            bar_w_mem = max(10, width - 13)
             _draw_bar(stdscr, row, 0, "Mem ", bar_w_mem, mem_pct)
             row += 2
 
-            # CPU bars — 2 columns
-            # label "NNN" (3) + " [" (2) + "] NNN.N%" (8) + 1 gap = 14 overhead per column
-            half = width // 2
-            bar_w_cpu = max(5, half - 14)
+            # CPU bars — max 5 rows, columns added dynamically as needed
+            # label "NNN" (3) + " [" (2) + "] NNN%" (6) + 1 gap = 12 overhead per column
+            n_cores = len(self.assigned_cores)
+            n_rows = min(5, n_cores)
+            n_cols = max(1, (n_cores + n_rows - 1) // n_rows)
+            col_width = width // n_cols
+            bar_w_cpu = max(5, col_width - 12)
 
-            for i in range(0, len(self.assigned_cores), 2):
-                if row >= height - 2:
+            for r in range(n_rows):
+                if row + r >= height - 2:
                     break
-                c0 = self.assigned_cores[i]
-                _draw_bar(stdscr, row, 0, f"{c0:3d}", bar_w_cpu, smoothed.get(c0, 0.0))
-                if i + 1 < len(self.assigned_cores):
-                    c1 = self.assigned_cores[i + 1]
-                    _draw_bar(stdscr, row, half, f"{c1:3d}", bar_w_cpu, smoothed.get(c1, 0.0))
-                row += 1
+                for c in range(n_cols):
+                    core_idx = r + c * n_rows
+                    if core_idx >= n_cores:
+                        break
+                    core = self.assigned_cores[core_idx]
+                    _draw_bar(stdscr, row + r, c * col_width, f"{core_idx:3d}", bar_w_cpu, smoothed.get(core, 0.0))
+            row += n_rows
 
             try:
-                stdscr.addstr(min(height - 1, row + 1), 0, "q: quit")
+                stdscr.addstr(min(height - 1, row + 1), 0, "q: quit  r: refresh")
             except curses.error:
                 pass
             stdscr.refresh()
@@ -492,6 +527,8 @@ class _Monitor:
             key = stdscr.getch()
             if key in (ord("q"), ord("Q")):
                 break
+            if key in (ord("r"), ord("R")):
+                force_clear = True
 
 
 def main():
