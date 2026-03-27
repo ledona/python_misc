@@ -23,8 +23,8 @@ _EMA_ALPHA = 0.3
 # Color pair indices
 _CP_DIM = 1  # gray:   <5%
 _CP_GREEN = 2  # green:  5-40%
-_CP_YELLOW = 3  # yellow: 40-80%
-_CP_RED = 4  # red:    >80%
+_CP_YELLOW = 3  # yellow: 40-90%
+_CP_RED = 4  # red:    >90%
 
 _SPARK_CHARS = "▁▂▃▄▅▆▇█"
 
@@ -84,7 +84,7 @@ def _color_attr(pct: float) -> int:
         return curses.color_pair(_CP_DIM) | curses.A_DIM
     if pct < 40:
         return curses.color_pair(_CP_GREEN)
-    if pct < 80:
+    if pct < 90:
         return curses.color_pair(_CP_YELLOW)
     return curses.color_pair(_CP_RED)
 
