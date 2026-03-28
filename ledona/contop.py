@@ -533,6 +533,7 @@ class _Monitor:
             n_cores = len(self.assigned_cores)
             n_cols = max(1, min(n_cores, width // 17))
             n_rows = (n_cores + n_cols - 1) // n_cols
+            n_cols = (n_cores + n_rows - 1) // n_rows  # rebalance for even row fill
             col_width = width // n_cols
             bar_w_cpu = max(5, col_width - 12)
 
@@ -540,7 +541,7 @@ class _Monitor:
                 if row + r >= height - 2:
                     break
                 for c in range(n_cols):
-                    core_idx = r * n_cols + c
+                    core_idx = r + c * n_rows
                     if core_idx >= n_cores:
                         break
                     core = self.assigned_cores[core_idx]
