@@ -527,11 +527,12 @@ class _Monitor:
             _draw_bar(stdscr, row, 0, "Mem ", bar_w_mem, mem_pct)
             row += 2
 
-            # CPU bars — max 5 rows, columns added dynamically as needed
-            # label "NNN" (3) + " [" (2) + "] NNN%" (6) + 1 gap = 12 overhead per column
+            # CPU bars — row-major so all rows are full except possibly the last.
+            # Maximize columns from terminal width to minimize rows.
+            # min col width: label (3) + " [" (2) + "] NNN%" (6) + 1 gap + 5 min bar = 17
             n_cores = len(self.assigned_cores)
-            n_rows = min(5, n_cores)
-            n_cols = max(1, (n_cores + n_rows - 1) // n_rows)
+            n_cols = max(1, min(n_cores, width // 17))
+            n_rows = (n_cores + n_cols - 1) // n_cols
             col_width = width // n_cols
             bar_w_cpu = max(5, col_width - 12)
 
@@ -539,7 +540,7 @@ class _Monitor:
                 if row + r >= height - 2:
                     break
                 for c in range(n_cols):
-                    core_idx = r + c * n_rows
+                    core_idx = r * n_cols + c
                     if core_idx >= n_cores:
                         break
                     core = self.assigned_cores[core_idx]
