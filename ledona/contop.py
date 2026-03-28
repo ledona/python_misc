@@ -57,15 +57,15 @@ def _fmt_cores(cores: list[int]) -> str:
     return ",".join(parts)
 
 
-def _fmt_bytes(n: int) -> str:
+def _fmt_bytes(n: int, decimals: int = 1) -> str:
     v: float = n
     if n == 0:
         return "0.0"
     for unit in ("B", "KB", "MB", "GB", "TB"):
         if v < 1024:
-            return f"{v:.1f}{unit}"
+            return f"{v:.{decimals}f}{unit}"
         v /= 1024
-    return f"{v:.1f}PB"
+    return f"{v:.{decimals}f}PB"
 
 
 def _fmt_pct(pct: float) -> str:
@@ -90,7 +90,7 @@ def _color_attr(pct: float) -> int:
 
 
 def _draw_bar(stdscr: curses.window, row: int, col: int, label: str, bar_width: int, pct: float):
-    """Draw: LABEL [BAR] NNN.N%  with bar colored by pct threshold."""
+    """Draw: LABEL [BAR] NNN%  with bar colored by pct threshold."""
     try:
         stdscr.addstr(row, col, f"{label} [")
         stdscr.addstr(_bar(pct, bar_width), _color_attr(pct))
@@ -350,6 +350,17 @@ class _Monitor:
             pass
         return self._system_swap()
 
+    @staticmethod
+    def _get_disk() -> tuple[int, int]:
+        """Returns (used_bytes, total_bytes) for the root filesystem."""
+        try:
+            st = os.statvfs("/")
+            total = st.f_blocks * st.f_frsize
+            used = (st.f_blocks - st.f_bfree) * st.f_frsize
+            return used, total
+        except OSError:
+            return 0, 1
+
     def _get_memory(self) -> tuple[int, int]:
         """Returns (used_bytes, limit_bytes); limit falls back to system total."""
         try:
@@ -407,11 +418,13 @@ class _Monitor:
             smoothed = self._smooth(pcts)
             mem_used, mem_limit = self._get_memory()
             swap_used, swap_total = self._get_swap()
+            disk_used, disk_total = self._get_disk()
             s1, t1 = s2, t2
 
             avg_cpu = sum(smoothed.values()) / len(smoothed) if smoothed else 0.0
             mem_pct = mem_used / mem_limit * 100
             swap_pct = swap_used / swap_total * 100 if swap_total else 0.0
+            disk_pct = disk_used / disk_total * 100 if disk_total else 0.0
             self._record_history(avg_cpu, mem_pct)
 
             if force_clear:
@@ -445,35 +458,50 @@ class _Monitor:
             except curses.error:
                 pass
 
-            # Row 3: info section
+            # Row 3+: info section — labels in default color, values color-coded by threshold.
+            # Each chunk (label + value) wraps to the next row if it won't fit.
             cgroup_str = f"cgroup v{self.cgroup_ver}" if self.cgroup_ver else "host"
-            n_cores = len(self.assigned_cores)
-            cores_str = f"{n_cores} cores"
-            if swap_total >= 100 * 1024:
-                swap_str = f"{_fmt_bytes(swap_used)}/{_fmt_bytes(swap_total)} ({swap_pct:.1f}%)"
+            has_swap = swap_total >= 100 * 1024
+            if has_swap:
+                swap_val = f"{_fmt_bytes(swap_used)}/{_fmt_bytes(swap_total)} ({_fmt_pct(swap_pct)})"
+                swap_attr: int | None = _color_attr(swap_pct)
             else:
-                swap_str = "0 Swp"
-            info_prefix = (
-                f"{cgroup_str}  |  {cores_str}"
-                f"  |  CPU: {avg_cpu:.1f}%"
-                f"  |  Mem: {_fmt_bytes(mem_used)}/{_fmt_bytes(mem_limit)}"
-                f"  |  Swap: "
-            )
+                swap_val, swap_attr = "0 Swp", None
+            # each chunk: list of (text, attr) drawn atomically — no wrapping mid-chunk
+            chunks: list[list[tuple[str, int | None]]] = [
+                [(f"{cgroup_str}  |  {len(self.assigned_cores)} cores", None)],
+                [("  |  CPU: ", None), (_fmt_pct(avg_cpu), _color_attr(avg_cpu))],
+                [("  |  Mem: ", None), (f"{_fmt_bytes(mem_used)}/{_fmt_bytes(mem_limit)}", _color_attr(mem_pct))],
+                [("  |  Swap: ", None), (swap_val, swap_attr)],
+                [("  |  Disk: ", None), (f"{_fmt_bytes(disk_used, 0)}/{_fmt_bytes(disk_total, 0)}", _color_attr(disk_pct))],
+            ]
+            cur_row, cur_col = 3, 0
+            for chunk in chunks:
+                chunk_len = sum(len(text) for text, _ in chunk)
+                if cur_col > 0 and cur_col + chunk_len >= width - 1:
+                    cur_row += 1
+                    cur_col = 0
+                for i, (text, attr) in enumerate(chunk):
+                    if i == 0 and cur_col == 0 and text.startswith("  |  "):
+                        text = text[5:]
+                    try:
+                        clipped = text[: max(0, width - 1 - cur_col)]
+                        if attr is not None:
+                            stdscr.addstr(cur_row, cur_col, clipped, attr)
+                        else:
+                            stdscr.addstr(cur_row, cur_col, clipped)
+                        cur_col += len(clipped)
+                    except curses.error:
+                        pass
+
+            # separator after info (moves down if info wrapped)
+            sep_row = cur_row + 1
             try:
-                stdscr.addstr(3, 0, info_prefix[: width - 1])
-                col = len(info_prefix)
-                if col < width - 1:
-                    stdscr.addstr(3, col, swap_str[: width - 1 - col], _color_attr(swap_pct))
+                stdscr.addstr(sep_row, 0, "╌" * (width - 1))
             except curses.error:
                 pass
 
-            # Row 4: separator
-            try:
-                stdscr.addstr(4, 0, "╌" * (width - 1))
-            except curses.error:
-                pass
-
-            row = 5
+            row = sep_row + 1
 
             # Sparklines — same width as the memory bar below
             # label "CPU " (4) + " [" (2) + "]" (1) = 7 overhead
