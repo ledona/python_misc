@@ -75,6 +75,8 @@ def _fmt_pct(pct: float) -> str:
 
 
 def _bar(pct: float, width: int) -> str:
+    if round(pct) >= 100:
+        return "|" * width
     filled = int(pct / 100 * width)
     return "|" * filled + "." * (width - filled)
 
