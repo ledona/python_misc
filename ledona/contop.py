@@ -563,6 +563,39 @@ class _Monitor:
                 force_clear = True
 
 
+def _spot_state(monitor: _Monitor):
+    """Print a one-time text snapshot of CPU, memory, swap, and disk state, then exit."""
+    s1 = monitor._sample_cpu()
+    t1 = time.monotonic()
+    time.sleep(0.5)
+    t2 = time.monotonic()
+    s2 = monitor._sample_cpu()
+
+    pcts = monitor._calc_pct(s1, s2, (t2 - t1) * 1e9)
+    avg_cpu = sum(pcts.values()) / len(pcts) if pcts else 0.0
+
+    mem_used, mem_limit = monitor._get_memory()
+    mem_pct = mem_used / mem_limit * 100
+
+    swap_used, swap_total = monitor._get_swap()
+    swap_pct = swap_used / swap_total * 100 if swap_total else 0.0
+
+    disk_used, disk_total = monitor._get_disk()
+    disk_pct = disk_used / disk_total * 100 if disk_total else 0.0
+
+    cgroup_str = f"cgroup v{monitor.cgroup_ver}" if monitor.cgroup_ver else "host"
+    cores_str = f"{len(monitor.assigned_cores)} cores"
+
+    uptime = _fmt_container_uptime() if monitor.cgroup_ver else _fmt_uptime()
+    print(f"CPU:    {round(avg_cpu):3d}%  ({cores_str}, {cgroup_str}, {uptime})")
+    print(f"Memory: {_fmt_bytes(mem_used)} / {_fmt_bytes(mem_limit)} ({round(mem_pct):3d}%)")
+    if swap_total >= 100 * 1024:
+        print(f"Swap:   {_fmt_bytes(swap_used)} / {_fmt_bytes(swap_total)} ({round(swap_pct):3d}%)")
+    else:
+        print("Swap:   0 Swp")
+    print(f"Disk:   {_fmt_bytes(disk_used, 0)} / {_fmt_bytes(disk_total, 0)} ({round(disk_pct):3d}%)")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Container-aware top with per-core CPU bars")
     parser.add_argument(
@@ -572,9 +605,18 @@ def main():
         metavar="SECONDS",
         help="seconds of history shown in sparklines (default: 120)",
     )
+    parser.add_argument(
+        "--spot-state",
+        action="store_true",
+        help="print a point-in-time summary of CPU, memory, swap, and disk, then exit",
+    )
     args = parser.parse_args()
 
     monitor = _Monitor(history_seconds=args.history)
+    if args.spot_state:
+        _spot_state(monitor)
+        return
+
     try:
         curses.wrapper(monitor.run)
     except KeyboardInterrupt:
