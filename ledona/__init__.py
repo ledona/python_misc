@@ -12,7 +12,8 @@ from .deep_compare import (
     deep_compare_ordered_collections,
 )
 from .json import make_json_compatible
-from .profiler import process_timer, profileit, ctx_timer
+from .memory import bytes2human, get_size_recursive, get_total_memory, get_used_memory, meminfo
+from .profiler import ctx_timer, process_timer, profileit
 
 
 def constant_hasher(obj, as_int=True):
@@ -42,17 +43,22 @@ class ArgumentDefaultsHelpNoNoneFormatter(argparse.HelpFormatter):
 
 
 __all__ = [
-    "sqlalchemy",
-    "BaseTestClass",
+    "bytes2human",
+    "compare_dataframes",
+    "constant_hasher",
     "ctx_timer",
     "deep_compare",
     "deep_compare_dicts",
     "deep_compare_objs",
-    "compare_dataframes",
     "deep_compare_ordered_collections",
+    "get_size_recursive",
+    "get_total_memory",
+    "get_used_memory",
     "make_json_compatible",
-    "profileit",
-    "constant_hasher",
+    "meminfo",
     "process_timer",
+    "profileit",
+    "sqlalchemy",
     "ArgumentDefaultsHelpNoNoneFormatter",
+    "BaseTestClass",
 ]
