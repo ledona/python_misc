@@ -11,7 +11,6 @@ import time
 from typing import NamedTuple, Optional
 
 _CGROUP_V1_CPUACCT = "/sys/fs/cgroup/cpuacct/cpuacct.usage_percpu"
-_CGROUP_V1_CPUSET = "/sys/fs/cgroup/cpuset/cpuset.cpus"
 _CGROUP_V1_CPU_QUOTA = "/sys/fs/cgroup/cpu/cpu.cfs_quota_us"
 _CGROUP_V1_CPU_PERIOD = "/sys/fs/cgroup/cpu/cpu.cfs_period_us"
 _CGROUP_V1_MEM_USAGE = "/sys/fs/cgroup/memory/memory.usage_in_bytes"
@@ -277,14 +276,33 @@ class _Monitor:
         self._cgroup_base: str = self._find_cgroup_base()
         self.cgroup_ver: Optional[int] = self._detect_cgroup()
         self.cpu_quota_cores: Optional[float] = self._get_cpu_quota()
-        self.assigned_cores, _from_cpuset = self._get_assigned_cores()
-        if self.cpu_quota_cores is not None and len(self.assigned_cores) > math.ceil(self.cpu_quota_cores):
+        self.assigned_cores, _cores_known, self._is_cpuset_restricted = self._get_assigned_cores()
+        # quota slicing only applies when cpuset pins the container to specific cores
+        if self._is_cpuset_restricted and self.cpu_quota_cores is not None and len(self.assigned_cores) > math.ceil(self.cpu_quota_cores):
             self.display_cores = self.assigned_cores[: math.ceil(self.cpu_quota_cores)]
         else:
             self.display_cores = self.assigned_cores
-        # per-core bars are only accurate when the container is pinned to specific cores
-        # via cpuset, or when running on bare metal (cgroup_ver is None)
-        self.per_core_accurate: bool = _from_cpuset or self.cgroup_ver is None
+        # show per-core bars only when we can be confident bars represent the
+        # container's actual cores: cpuset-pinned, or quota/allocation covers all host cores
+        if not _cores_known:
+            self.per_core_accurate = False
+            self._per_core_hide_reason = "cgroup cpuset controller present but its configuration could not be read"
+        elif not self._is_cpuset_restricted and self.cpu_quota_cores is not None:
+            # quota without cpuset: safe to show only if quota covers all host cores
+            # (when not restricted, assigned_cores == all host cores)
+            host_core_count = len(self.assigned_cores)
+            if math.ceil(self.cpu_quota_cores) >= host_core_count:
+                self.per_core_accurate = True
+                self._per_core_hide_reason = ""
+            else:
+                self.per_core_accurate = False
+                self._per_core_hide_reason = (
+                    f"container quota is {math.ceil(self.cpu_quota_cores)} cores but host has "
+                    f"{host_core_count}; cannot determine which specific cores are assigned"
+                )
+        else:
+            self.per_core_accurate = True
+            self._per_core_hide_reason = ""
         self._smoothed: dict[int, float] = {}
         self.hostname = socket.gethostname()
         self.username = getpass.getuser()
@@ -350,13 +368,17 @@ class _Monitor:
                     parts = open(path).read().strip().split()
                     if parts[0] != "max":
                         return int(parts[0]) / int(parts[1])
-            if self.cgroup_ver == 1 and os.path.exists(_CGROUP_V1_CPU_QUOTA):
-                quota = int(open(_CGROUP_V1_CPU_QUOTA).read().strip())
-                if quota > 0:
-                    period = 100000
-                    if os.path.exists(_CGROUP_V1_CPU_PERIOD):
-                        period = int(open(_CGROUP_V1_CPU_PERIOD).read().strip())
-                    return quota / period
+            if self.cgroup_ver == 1:
+                v1_cpu_path = self._find_v1_controller_path("cpu")
+                quota_file = os.path.join(v1_cpu_path, "cpu.cfs_quota_us") if v1_cpu_path else _CGROUP_V1_CPU_QUOTA
+                period_file = os.path.join(v1_cpu_path, "cpu.cfs_period_us") if v1_cpu_path else _CGROUP_V1_CPU_PERIOD
+                if os.path.exists(quota_file):
+                    quota = int(open(quota_file).read().strip())
+                    if quota > 0:
+                        period = 100000
+                        if os.path.exists(period_file):
+                            period = int(open(period_file).read().strip())
+                        return quota / period
         except (OSError, ValueError, IndexError):
             pass
         return None
@@ -376,15 +398,20 @@ class _Monitor:
             pass
         return None
 
-    def _get_assigned_cores(self) -> tuple[list[int], bool]:
-        """Return (cores, from_cpuset).
+    def _get_assigned_cores(self) -> tuple[list[int], bool, bool]:
+        """Return (cores, cores_known, is_restricted).
 
-        from_cpuset is True only when cpuset pinned the container to a strict
-        subset of host cores, meaning per-core display will be accurate.
+        cores_known: True when the full set of cores available to this container is
+        confirmed (bare metal, no cpuset restriction, or cpuset successfully read).
+        False only when a cpuset controller is present but its file is unreadable,
+        so we cannot determine whether the container is pinned to a subset.
+
+        is_restricted: True when cores is a cpuset-pinned strict subset of all host
+        cores.  Used to decide quota slicing and avg_cpu formula.
         """
         all_cores = sorted(_read_proc_stat().keys())
         if self.cgroup_ver is None:
-            return all_cores, False
+            return all_cores, True, False  # bare metal: all cores, confirmed
 
         all_core_set = set(all_cores)
 
@@ -394,10 +421,10 @@ class _Monitor:
                 try:
                     with open(os.path.join(v1_path, "cpuset.cpus")) as f:
                         cores = _parse_cpuset(f.read())
-                    if set(cores) < all_core_set:
-                        return cores, True
+                    return cores, True, set(cores) < all_core_set
                 except OSError:
-                    pass
+                    # controller present but file unreadable: cannot determine restriction
+                    return all_cores, False, False
 
         # Check v2 cpuset files (pure v2 or hybrid fallback)
         base = self._cgroup_base
@@ -413,15 +440,16 @@ class _Monitor:
             if not content:
                 continue
             cores = _parse_cpuset(content)
-            if set(cores) < all_core_set:
-                return cores, True
-            break  # file exists but not restricted; stop looking
+            return cores, True, set(cores) < all_core_set
 
-        return all_cores, False
+        # No cpuset restriction detected: all cores confirmed available
+        return all_cores, True, False
 
     def _sample_cpu(self):
         if self.cgroup_ver == 1:
-            with open(_CGROUP_V1_CPUACCT) as f:
+            v1_path = self._find_v1_controller_path("cpuacct")
+            cpuacct_file = os.path.join(v1_path, "cpuacct.usage_percpu") if v1_path else _CGROUP_V1_CPUACCT
+            with open(cpuacct_file) as f:
                 return [int(x) for x in f.read().split()]
         return _read_proc_stat()
 
@@ -453,13 +481,10 @@ class _Monitor:
 
     def _calc_avg_cpu(self, pcts: dict[int, float]) -> float:
         """Compute avg CPU % scaled to quota or cpuset, whichever applies."""
-        if self.per_core_accurate:
-            cores = self.display_cores
-            return sum(pcts.get(c, 0.0) for c in cores) / len(cores) if cores else 0.0
-        if self.cpu_quota_cores and self.assigned_cores:
-            # sum all host-core usages and normalize by quota (gives % of quota consumed)
+        if not self._is_cpuset_restricted and self.cpu_quota_cores:
+            # quota is the binding constraint: normalize by quota (gives % of quota consumed)
             return min(100.0, sum(pcts.get(c, 0.0) for c in self.assigned_cores) / self.cpu_quota_cores)
-        cores = self.assigned_cores
+        cores = self.display_cores
         return sum(pcts.get(c, 0.0) for c in cores) / len(cores) if cores else 0.0
 
     def _record_history(self, avg_cpu: float, mem_pct: float):
@@ -768,7 +793,7 @@ class _Monitor:
                 row += n_rows
             else:
                 try:
-                    stdscr.addstr(row, 0, "per-core CPU usage unavailable: container uses CPU quota without cpuset pinning (cores not deterministic)", curses.A_DIM)
+                    stdscr.addstr(row, 0, f"per-core CPU usage unavailable: {self._per_core_hide_reason}", curses.A_DIM)
                 except curses.error:
                     pass
                 row += 1
