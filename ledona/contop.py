@@ -17,10 +17,8 @@ _CGROUP_V1_CPU_PERIOD = "/sys/fs/cgroup/cpu/cpu.cfs_period_us"
 _CGROUP_V1_MEM_USAGE = "/sys/fs/cgroup/memory/memory.usage_in_bytes"
 _CGROUP_V1_MEM_LIMIT = "/sys/fs/cgroup/memory/memory.limit_in_bytes"
 _CGROUP_V2_CPUSET_EFF = "/sys/fs/cgroup/cpuset.cpus.effective"
-_CGROUP_V2_CPUSET = "/sys/fs/cgroup/cpuset.cpus"
 _CGROUP_V2_CPU_MAX = "/sys/fs/cgroup/cpu.max"
 _CGROUP_V2_MEM_CURR = "/sys/fs/cgroup/memory.current"
-_CGROUP_V2_MEM_MAX = "/sys/fs/cgroup/memory.max"
 
 # EMA smoothing factor (higher = more responsive, lower = smoother)
 _EMA_ALPHA = 0.3
@@ -276,13 +274,17 @@ def _read_proc_stat() -> dict[int, tuple[int, int]]:
 
 class _Monitor:
     def __init__(self, history_seconds: int):
+        self._cgroup_base: str = self._find_cgroup_base()
         self.cgroup_ver: Optional[int] = self._detect_cgroup()
         self.cpu_quota_cores: Optional[float] = self._get_cpu_quota()
-        self.assigned_cores = self._get_assigned_cores()
-        if self.cpu_quota_cores is not None:
+        self.assigned_cores, _from_cpuset = self._get_assigned_cores()
+        if self.cpu_quota_cores is not None and len(self.assigned_cores) > math.ceil(self.cpu_quota_cores):
             self.display_cores = self.assigned_cores[: math.ceil(self.cpu_quota_cores)]
         else:
             self.display_cores = self.assigned_cores
+        # per-core bars are only accurate when the container is pinned to specific cores
+        # via cpuset, or when running on bare metal (cgroup_ver is None)
+        self.per_core_accurate: bool = _from_cpuset or self.cgroup_ver is None
         self._smoothed: dict[int, float] = {}
         self.hostname = socket.gethostname()
         self.username = getpass.getuser()
@@ -295,23 +297,59 @@ class _Monitor:
         self._gpu_mem_history: list[float] = []
         self.cpu_model: Optional[str] = self._get_cpu_model()
 
+    @staticmethod
+    def _find_cgroup_base() -> str:
+        """Return this process's own cgroup directory; falls back to /sys/fs/cgroup."""
+        try:
+            with open("/proc/self/cgroup") as f:
+                for line in f:
+                    parts = line.strip().split(":", 2)
+                    if parts[0] == "0" and len(parts) == 3:
+                        rel = parts[2].strip()
+                        if rel and rel != "/":
+                            candidate = "/sys/fs/cgroup" + rel
+                            if os.path.isdir(candidate):
+                                return candidate
+        except OSError:
+            pass
+        return "/sys/fs/cgroup"
+
+    @staticmethod
+    def _find_v1_controller_path(controller: str) -> Optional[str]:
+        """Return container-specific v1 cgroup directory for the given controller."""
+        try:
+            with open("/proc/self/cgroup") as f:
+                for line in f:
+                    parts = line.strip().split(":", 2)
+                    if len(parts) == 3 and controller in parts[1].split(","):
+                        rel = parts[2].strip()
+                        if rel and rel != "/":
+                            path = f"/sys/fs/cgroup/{controller}{rel}"
+                            if os.path.isdir(path):
+                                return path
+        except OSError:
+            pass
+        return None
+
     def _detect_cgroup(self) -> Optional[int]:
         if os.path.exists(_CGROUP_V1_CPUACCT):
             return 1
-        if any(
-            os.path.exists(p)
-            for p in (_CGROUP_V2_MEM_CURR, _CGROUP_V2_CPUSET_EFF, _CGROUP_V2_CPU_MAX)
-        ):
+        base = self._cgroup_base
+        if any(os.path.exists(os.path.join(base, f)) for f in ("memory.current", "cpuset.cpus.effective", "cpu.max")):
+            return 2
+        if any(os.path.exists(p) for p in (_CGROUP_V2_MEM_CURR, _CGROUP_V2_CPUSET_EFF, _CGROUP_V2_CPU_MAX)):
             return 2
         return None
 
     def _get_cpu_quota(self) -> Optional[float]:
         """Return effective CPU count from cgroup quota, or None if unlimited/unavailable."""
         try:
-            if self.cgroup_ver == 2 and os.path.exists(_CGROUP_V2_CPU_MAX):
-                parts = open(_CGROUP_V2_CPU_MAX).read().strip().split()
-                if parts[0] != "max":
-                    return int(parts[0]) / int(parts[1])
+            if self.cgroup_ver == 2:
+                path = os.path.join(self._cgroup_base, "cpu.max")
+                if os.path.exists(path):
+                    parts = open(path).read().strip().split()
+                    if parts[0] != "max":
+                        return int(parts[0]) / int(parts[1])
             if self.cgroup_ver == 1 and os.path.exists(_CGROUP_V1_CPU_QUOTA):
                 quota = int(open(_CGROUP_V1_CPU_QUOTA).read().strip())
                 if quota > 0:
@@ -338,18 +376,48 @@ class _Monitor:
             pass
         return None
 
-    def _get_assigned_cores(self) -> list[int]:
+    def _get_assigned_cores(self) -> tuple[list[int], bool]:
+        """Return (cores, from_cpuset).
+
+        from_cpuset is True only when cpuset pinned the container to a strict
+        subset of host cores, meaning per-core display will be accurate.
+        """
+        all_cores = sorted(_read_proc_stat().keys())
+        if self.cgroup_ver is None:
+            return all_cores, False
+
+        all_core_set = set(all_cores)
+
         if self.cgroup_ver == 1:
-            with open(_CGROUP_V1_CPUSET) as f:
-                return _parse_cpuset(f.read())
-        if self.cgroup_ver == 2:
-            for path in (_CGROUP_V2_CPUSET_EFF, _CGROUP_V2_CPUSET):
-                if os.path.exists(path):
-                    with open(path) as f:
-                        content = f.read().strip()
-                        if content:
-                            return _parse_cpuset(content)
-        return sorted(_read_proc_stat().keys())
+            v1_path = self._find_v1_controller_path("cpuset")
+            if v1_path:
+                try:
+                    with open(os.path.join(v1_path, "cpuset.cpus")) as f:
+                        cores = _parse_cpuset(f.read())
+                    if set(cores) < all_core_set:
+                        return cores, True
+                except OSError:
+                    pass
+
+        # Check v2 cpuset files (pure v2 or hybrid fallback)
+        base = self._cgroup_base
+        for fname in ("cpuset.cpus.effective", "cpuset.cpus"):
+            path = os.path.join(base, fname)
+            if not os.path.exists(path):
+                continue
+            try:
+                with open(path) as f:
+                    content = f.read().strip()
+            except OSError:
+                continue
+            if not content:
+                continue
+            cores = _parse_cpuset(content)
+            if set(cores) < all_core_set:
+                return cores, True
+            break  # file exists but not restricted; stop looking
+
+        return all_cores, False
 
     def _sample_cpu(self):
         if self.cgroup_ver == 1:
@@ -382,6 +450,17 @@ class _Monitor:
             else:
                 self._smoothed[core] = pct
         return self._smoothed
+
+    def _calc_avg_cpu(self, pcts: dict[int, float]) -> float:
+        """Compute avg CPU % scaled to quota or cpuset, whichever applies."""
+        if self.per_core_accurate:
+            cores = self.display_cores
+            return sum(pcts.get(c, 0.0) for c in cores) / len(cores) if cores else 0.0
+        if self.cpu_quota_cores and self.assigned_cores:
+            # sum all host-core usages and normalize by quota (gives % of quota consumed)
+            return min(100.0, sum(pcts.get(c, 0.0) for c in self.assigned_cores) / self.cpu_quota_cores)
+        cores = self.assigned_cores
+        return sum(pcts.get(c, 0.0) for c in cores) / len(cores) if cores else 0.0
 
     def _record_history(self, avg_cpu: float, mem_pct: float):
         self._cpu_history.append(avg_cpu)
@@ -435,17 +514,21 @@ class _Monitor:
     def _get_swap(self) -> tuple[int, int]:
         """Returns (swap_used_bytes, swap_total_bytes)."""
         try:
-            if self.cgroup_ver == 2 and os.path.exists("/sys/fs/cgroup/memory.swap.current"):
-                with open("/sys/fs/cgroup/memory.swap.current") as f:
-                    used = int(f.read().strip())
-                total = None
-                if os.path.exists("/sys/fs/cgroup/memory.swap.max"):
-                    with open("/sys/fs/cgroup/memory.swap.max") as f:
-                        content = f.read().strip()
-                        if content != "max":
-                            total = int(content)
-                _, sys_total = self._system_swap()
-                return used, total or sys_total or 1
+            if self.cgroup_ver == 2:
+                base = self._cgroup_base
+                swap_curr = os.path.join(base, "memory.swap.current")
+                if os.path.exists(swap_curr):
+                    with open(swap_curr) as f:
+                        used = int(f.read().strip())
+                    total = None
+                    swap_max = os.path.join(base, "memory.swap.max")
+                    if os.path.exists(swap_max):
+                        with open(swap_max) as f:
+                            content = f.read().strip()
+                            if content != "max":
+                                total = int(content)
+                    _, sys_total = self._system_swap()
+                    return used, total or sys_total or 1
             if self.cgroup_ver == 1 and os.path.exists(
                 "/sys/fs/cgroup/memory/memory.memsw.usage_in_bytes"
             ):
@@ -480,13 +563,16 @@ class _Monitor:
                     limit_val = int(f.read().strip())
                 limit = None if limit_val >= (1 << 62) else limit_val
             elif self.cgroup_ver == 2:
-                if not os.path.exists(_CGROUP_V2_MEM_CURR):
+                base = self._cgroup_base
+                curr_path = os.path.join(base, "memory.current")
+                if not os.path.exists(curr_path):
                     return 0, self._system_mem_total() or 1
-                with open(_CGROUP_V2_MEM_CURR) as f:
+                with open(curr_path) as f:
                     used = int(f.read().strip())
                 limit = None
-                if os.path.exists(_CGROUP_V2_MEM_MAX):
-                    with open(_CGROUP_V2_MEM_MAX) as f:
+                max_path = os.path.join(base, "memory.max")
+                if os.path.exists(max_path):
+                    with open(max_path) as f:
                         content = f.read().strip()
                         if content != "max":
                             limit = int(content)
@@ -532,10 +618,7 @@ class _Monitor:
             self._record_gpu_history(gpus)
             s1, t1 = s2, t2
 
-            if self.cpu_quota_cores is not None:
-                avg_cpu = min(100.0, sum(smoothed.values()) / self.cpu_quota_cores) if smoothed else 0.0
-            else:
-                avg_cpu = sum(smoothed.values()) / len(smoothed) if smoothed else 0.0
+            avg_cpu = self._calc_avg_cpu(smoothed)
             mem_pct = mem_used / mem_limit * 100
             swap_pct = swap_used / swap_total * 100 if swap_total else 0.0
             disk_pct = disk_used / disk_total * 100 if disk_total else 0.0
@@ -664,26 +747,31 @@ class _Monitor:
                 pass
             row += 2
 
-            # CPU bars — row-major so all rows are full except possibly the last.
-            # Maximize columns from terminal width to minimize rows.
-            # min col width: label (3) + " [" (2) + "] NNN%" (6) + 1 gap + 5 min bar = 17
-            n_cores = len(self.display_cores)
-            n_cols = max(1, min(n_cores, width // 17))
-            n_rows = (n_cores + n_cols - 1) // n_cols
-            n_cols = (n_cores + n_rows - 1) // n_rows  # rebalance for even row fill
-            col_width = width // n_cols
-            bar_w_cpu = max(5, col_width - 12)
+            # CPU bars — only shown when per-core accuracy can be guaranteed (cpuset or bare metal)
+            if self.per_core_accurate:
+                n_cores = len(self.display_cores)
+                n_cols = max(1, min(n_cores, width // 17))
+                n_rows = (n_cores + n_cols - 1) // n_cols
+                n_cols = (n_cores + n_rows - 1) // n_rows  # rebalance for even row fill
+                col_width = width // n_cols
+                bar_w_cpu = max(5, col_width - 12)
 
-            for r in range(n_rows):
-                if row + r >= height - 2:
-                    break
-                for c in range(n_cols):
-                    core_idx = r + c * n_rows
-                    if core_idx >= n_cores:
+                for r in range(n_rows):
+                    if row + r >= height - 2:
                         break
-                    core = self.display_cores[core_idx]
-                    _draw_bar(stdscr, row + r, c * col_width, f"{core_idx:3d}", bar_w_cpu, smoothed.get(core, 0.0))
-            row += n_rows
+                    for c in range(n_cols):
+                        core_idx = r + c * n_rows
+                        if core_idx >= n_cores:
+                            break
+                        core = self.display_cores[core_idx]
+                        _draw_bar(stdscr, row + r, c * col_width, f"{core_idx:3d}", bar_w_cpu, smoothed.get(core, 0.0))
+                row += n_rows
+            else:
+                try:
+                    stdscr.addstr(row, 0, "per-core CPU usage unavailable: container uses CPU quota without cpuset pinning (cores not deterministic)", curses.A_DIM)
+                except curses.error:
+                    pass
+                row += 1
 
             try:
                 stdscr.addstr(min(height - 1, row + 1), 0, "q: quit  r: refresh")
@@ -707,10 +795,7 @@ def _spot_state(monitor: _Monitor):
     s2 = monitor._sample_cpu()
 
     pcts = monitor._calc_pct(s1, s2, (t2 - t1) * 1e9)
-    if monitor.cpu_quota_cores is not None:
-        avg_cpu = min(100.0, sum(pcts.values()) / monitor.cpu_quota_cores) if pcts else 0.0
-    else:
-        avg_cpu = sum(pcts.values()) / len(pcts) if pcts else 0.0
+    avg_cpu = monitor._calc_avg_cpu(pcts)
 
     mem_used, mem_limit = monitor._get_memory()
     mem_pct = mem_used / mem_limit * 100
