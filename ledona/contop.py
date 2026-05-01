@@ -1,19 +1,24 @@
-"""container aware top for CPU/MEMORY usage created mostly with claudecode"""
+"""container aware top for [C+G]PU/MEMORY usage created mostly with claudecode"""
 
 import argparse
 import curses
 import getpass
+import math
 import os
 import socket
+import subprocess
 import time
-from typing import Optional
+from typing import NamedTuple, Optional
 
 _CGROUP_V1_CPUACCT = "/sys/fs/cgroup/cpuacct/cpuacct.usage_percpu"
 _CGROUP_V1_CPUSET = "/sys/fs/cgroup/cpuset/cpuset.cpus"
+_CGROUP_V1_CPU_QUOTA = "/sys/fs/cgroup/cpu/cpu.cfs_quota_us"
+_CGROUP_V1_CPU_PERIOD = "/sys/fs/cgroup/cpu/cpu.cfs_period_us"
 _CGROUP_V1_MEM_USAGE = "/sys/fs/cgroup/memory/memory.usage_in_bytes"
 _CGROUP_V1_MEM_LIMIT = "/sys/fs/cgroup/memory/memory.limit_in_bytes"
 _CGROUP_V2_CPUSET_EFF = "/sys/fs/cgroup/cpuset.cpus.effective"
 _CGROUP_V2_CPUSET = "/sys/fs/cgroup/cpuset.cpus"
+_CGROUP_V2_CPU_MAX = "/sys/fs/cgroup/cpu.max"
 _CGROUP_V2_MEM_CURR = "/sys/fs/cgroup/memory.current"
 _CGROUP_V2_MEM_MAX = "/sys/fs/cgroup/memory.max"
 
@@ -213,6 +218,48 @@ def _draw_sparkline(
         pass
 
 
+class _GpuSample(NamedTuple):
+    index: int
+    name: str
+    mem_used_mb: int
+    mem_total_mb: int
+    util_pct: float
+
+
+def _sample_gpus() -> list[_GpuSample]:
+    """Query nvidia-smi for per-GPU stats. Returns empty list if unavailable."""
+    try:
+        out = subprocess.check_output(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,name,memory.used,memory.total,utilization.gpu",
+                "--format=csv,noheader,nounits",
+            ],
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        ).decode()
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return []
+    gpus = []
+    for line in out.strip().splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) != 5:
+            continue
+        try:
+            gpus.append(
+                _GpuSample(
+                    index=int(parts[0]),
+                    name=parts[1],
+                    mem_used_mb=int(parts[2]),
+                    mem_total_mb=int(parts[3]),
+                    util_pct=float(parts[4]),
+                )
+            )
+        except ValueError:
+            continue
+    return gpus
+
+
 def _read_proc_stat() -> dict[int, tuple[int, int]]:
     """Read /proc/stat, return {core_id: (idle_jiffies, total_jiffies)}."""
     result = {}
@@ -230,19 +277,65 @@ def _read_proc_stat() -> dict[int, tuple[int, int]]:
 class _Monitor:
     def __init__(self, history_seconds: int):
         self.cgroup_ver: Optional[int] = self._detect_cgroup()
+        self.cpu_quota_cores: Optional[float] = self._get_cpu_quota()
         self.assigned_cores = self._get_assigned_cores()
+        if self.cpu_quota_cores is not None:
+            self.display_cores = self.assigned_cores[: math.ceil(self.cpu_quota_cores)]
+        else:
+            self.display_cores = self.assigned_cores
         self._smoothed: dict[int, float] = {}
         self.hostname = socket.gethostname()
         self.username = getpass.getuser()
         self.max_history = history_seconds
         self._cpu_history: list[float] = []
         self._mem_history: list[float] = []
+        _initial_gpus = _sample_gpus()
+        self.gpu_names: dict[int, str] = {g.index: g.name for g in _initial_gpus}
+        self._gpu_util_history: list[float] = []
+        self._gpu_mem_history: list[float] = []
+        self.cpu_model: Optional[str] = self._get_cpu_model()
 
     def _detect_cgroup(self) -> Optional[int]:
         if os.path.exists(_CGROUP_V1_CPUACCT):
             return 1
-        if os.path.exists(_CGROUP_V2_MEM_CURR) or os.path.exists(_CGROUP_V2_CPUSET_EFF):
+        if any(
+            os.path.exists(p)
+            for p in (_CGROUP_V2_MEM_CURR, _CGROUP_V2_CPUSET_EFF, _CGROUP_V2_CPU_MAX)
+        ):
             return 2
+        return None
+
+    def _get_cpu_quota(self) -> Optional[float]:
+        """Return effective CPU count from cgroup quota, or None if unlimited/unavailable."""
+        try:
+            if self.cgroup_ver == 2 and os.path.exists(_CGROUP_V2_CPU_MAX):
+                parts = open(_CGROUP_V2_CPU_MAX).read().strip().split()
+                if parts[0] != "max":
+                    return int(parts[0]) / int(parts[1])
+            if self.cgroup_ver == 1 and os.path.exists(_CGROUP_V1_CPU_QUOTA):
+                quota = int(open(_CGROUP_V1_CPU_QUOTA).read().strip())
+                if quota > 0:
+                    period = 100000
+                    if os.path.exists(_CGROUP_V1_CPU_PERIOD):
+                        period = int(open(_CGROUP_V1_CPU_PERIOD).read().strip())
+                    return quota / period
+        except (OSError, ValueError, IndexError):
+            pass
+        return None
+
+    @staticmethod
+    def _get_cpu_model() -> Optional[str]:
+        try:
+            with open("/proc/cpuinfo") as f:
+                for line in f:
+                    if line.startswith("model name"):
+                        name = line.split(":", 1)[1].strip()
+                        if " @" in name:
+                            name = name[: name.index(" @")]
+                        name = name.replace("(R)", "").replace("(TM)", "")
+                        return " ".join(name.split())
+        except OSError:
+            pass
         return None
 
     def _get_assigned_cores(self) -> list[int]:
@@ -297,6 +390,20 @@ class _Monitor:
         self._mem_history.append(mem_pct)
         if len(self._mem_history) > self.max_history:
             self._mem_history = self._mem_history[-self.max_history :]
+
+    def _record_gpu_history(self, gpus: list[_GpuSample]):
+        if not gpus:
+            return
+        avg_util = sum(g.util_pct for g in gpus) / len(gpus)
+        total_mb = sum(g.mem_total_mb for g in gpus)
+        used_mb = sum(g.mem_used_mb for g in gpus)
+        mem_pct = used_mb / total_mb * 100 if total_mb else 0.0
+        self._gpu_util_history.append(avg_util)
+        if len(self._gpu_util_history) > self.max_history:
+            self._gpu_util_history = self._gpu_util_history[-self.max_history :]
+        self._gpu_mem_history.append(mem_pct)
+        if len(self._gpu_mem_history) > self.max_history:
+            self._gpu_mem_history = self._gpu_mem_history[-self.max_history :]
 
     @staticmethod
     def _system_mem_total() -> Optional[int]:
@@ -421,9 +528,14 @@ class _Monitor:
             mem_used, mem_limit = self._get_memory()
             swap_used, swap_total = self._get_swap()
             disk_used, disk_total = self._get_disk()
+            gpus = _sample_gpus()
+            self._record_gpu_history(gpus)
             s1, t1 = s2, t2
 
-            avg_cpu = sum(smoothed.values()) / len(smoothed) if smoothed else 0.0
+            if self.cpu_quota_cores is not None:
+                avg_cpu = min(100.0, sum(smoothed.values()) / self.cpu_quota_cores) if smoothed else 0.0
+            else:
+                avg_cpu = sum(smoothed.values()) / len(smoothed) if smoothed else 0.0
             mem_pct = mem_used / mem_limit * 100
             swap_pct = swap_used / swap_total * 100 if swap_total else 0.0
             disk_pct = disk_used / disk_total * 100 if disk_total else 0.0
@@ -439,7 +551,7 @@ class _Monitor:
             # Row 0: title left, datetime right
             now = time.strftime("%Y-%m-%d %H:%M:%S")
             try:
-                stdscr.addstr(0, 0, "contop - container aware cpu/memory usage", curses.A_BOLD)
+                stdscr.addstr(0, 0, "contop - container aware cpu/gpu/memory usage", curses.A_BOLD)
                 if width > len(now) + 8:
                     stdscr.addstr(0, width - len(now) - 1, now)
             except curses.error:
@@ -463,22 +575,44 @@ class _Monitor:
             # Row 3+: info section — labels in default color, values color-coded by threshold.
             # Each chunk (label + value) wraps to the next row if it won't fit.
             cgroup_str = f"cgroup v{self.cgroup_ver}" if self.cgroup_ver else "host"
+            if self.cpu_quota_cores is not None:
+                n_effective = math.ceil(self.cpu_quota_cores)
+                cores_label = f"({n_effective} core)"
+            else:
+                cores_label = f"({len(self.assigned_cores)} core)"
+            if self.cpu_model:
+                cores_label += f" {self.cpu_model}"
             has_swap = swap_total >= 100 * 1024
             if has_swap:
                 swap_val = f"{_fmt_bytes(swap_used)}/{_fmt_bytes(swap_total)} ({_fmt_pct(swap_pct)})"
                 swap_attr: int | None = _color_attr(swap_pct)
             else:
                 swap_val, swap_attr = "0 Swp", None
-            # each chunk: list of (text, attr) drawn atomically — no wrapping mid-chunk
-            chunks: list[list[tuple[str, int | None]]] = [
-                [(f"{cgroup_str}  |  {len(self.assigned_cores)} cores", None)],
-                [("  |  CPU: ", None), (_fmt_pct(avg_cpu), _color_attr(avg_cpu))],
-                [("  |  Mem: ", None), (f"{_fmt_bytes(mem_used)}/{_fmt_bytes(mem_limit)}", _color_attr(mem_pct))],
+            # each chunk: list of (text, attr) drawn atomically — no wrapping mid-chunk;
+            # None is a forced line break
+            chunks: list[list[tuple[str, int | None]] | None] = [
+                [(f"{cgroup_str}  |  {cores_label}: ", None), (_fmt_pct(avg_cpu), _color_attr(avg_cpu))],
+                [("  |  Mem: ", None), (f"{_fmt_bytes(mem_used)}/{_fmt_bytes(mem_limit)} {_fmt_pct(mem_pct)}", _color_attr(mem_pct))],
                 [("  |  Swap: ", None), (swap_val, swap_attr)],
                 [("  |  Disk: ", None), (f"{_fmt_bytes(disk_used, 0)}/{_fmt_bytes(disk_total, 0)}", _color_attr(disk_pct))],
             ]
+            if self.gpu_names:
+                n_gpus = len(self.gpu_names)
+                avg_gpu_util = sum(g.util_pct for g in gpus) / len(gpus) if gpus else 0.0
+                total_vmem_mb = sum(g.mem_total_mb for g in gpus)
+                used_vmem_mb = sum(g.mem_used_mb for g in gpus)
+                vmem_pct = used_vmem_mb / total_vmem_mb * 100 if total_vmem_mb else 0.0
+                unique_names = list(dict.fromkeys(self.gpu_names.values()))
+                gpu_name_str = "/".join(unique_names)
+                chunks.append(None)
+                chunks.append([(f"{n_gpus}x {gpu_name_str}: ", None), (_fmt_pct(avg_gpu_util), _color_attr(avg_gpu_util))])
+                chunks.append([("  |  VMem: ", None), (f"{_fmt_bytes(used_vmem_mb << 20)}/{_fmt_bytes(total_vmem_mb << 20)} {_fmt_pct(vmem_pct)}", _color_attr(vmem_pct))])
             cur_row, cur_col = 3, 0
             for chunk in chunks:
+                if chunk is None:
+                    cur_row += 1
+                    cur_col = 0
+                    continue
                 chunk_len = sum(len(text) for text, _ in chunk)
                 if cur_col > 0 and cur_col + chunk_len >= width - 1:
                     cur_row += 1
@@ -516,6 +650,13 @@ class _Monitor:
                 stdscr, row, 0, "Mem ", self._mem_history, bar_w_spark, self.max_history
             )
             row += 1
+            if self.gpu_names:
+                if row < height - 2:
+                    _draw_sparkline(stdscr, row, 0, "GPU ", self._gpu_util_history, bar_w_spark, self.max_history)
+                    row += 1
+                if row < height - 2:
+                    _draw_sparkline(stdscr, row, 0, "GMem", self._gpu_mem_history, bar_w_spark, self.max_history)
+                    row += 1
             # ruler indented to align with bar content: label (4) + " [" (2) = 6
             try:
                 stdscr.addstr(row, 6, _ruler(bar_w_spark, self.max_history))
@@ -523,16 +664,10 @@ class _Monitor:
                 pass
             row += 2
 
-            # Memory bar — full width
-            # label "Mem " (4) + " [" (2) + "] NNN%" (6) = 12 overhead
-            bar_w_mem = max(10, width - 13)
-            _draw_bar(stdscr, row, 0, "Mem ", bar_w_mem, mem_pct)
-            row += 2
-
             # CPU bars — row-major so all rows are full except possibly the last.
             # Maximize columns from terminal width to minimize rows.
             # min col width: label (3) + " [" (2) + "] NNN%" (6) + 1 gap + 5 min bar = 17
-            n_cores = len(self.assigned_cores)
+            n_cores = len(self.display_cores)
             n_cols = max(1, min(n_cores, width // 17))
             n_rows = (n_cores + n_cols - 1) // n_cols
             n_cols = (n_cores + n_rows - 1) // n_rows  # rebalance for even row fill
@@ -546,7 +681,7 @@ class _Monitor:
                     core_idx = r + c * n_rows
                     if core_idx >= n_cores:
                         break
-                    core = self.assigned_cores[core_idx]
+                    core = self.display_cores[core_idx]
                     _draw_bar(stdscr, row + r, c * col_width, f"{core_idx:3d}", bar_w_cpu, smoothed.get(core, 0.0))
             row += n_rows
 
@@ -572,7 +707,10 @@ def _spot_state(monitor: _Monitor):
     s2 = monitor._sample_cpu()
 
     pcts = monitor._calc_pct(s1, s2, (t2 - t1) * 1e9)
-    avg_cpu = sum(pcts.values()) / len(pcts) if pcts else 0.0
+    if monitor.cpu_quota_cores is not None:
+        avg_cpu = min(100.0, sum(pcts.values()) / monitor.cpu_quota_cores) if pcts else 0.0
+    else:
+        avg_cpu = sum(pcts.values()) / len(pcts) if pcts else 0.0
 
     mem_used, mem_limit = monitor._get_memory()
     mem_pct = mem_used / mem_limit * 100
@@ -584,16 +722,27 @@ def _spot_state(monitor: _Monitor):
     disk_pct = disk_used / disk_total * 100 if disk_total else 0.0
 
     cgroup_str = f"cgroup v{monitor.cgroup_ver}" if monitor.cgroup_ver else "host"
-    cores_str = f"{len(monitor.assigned_cores)} cores"
+    if monitor.cpu_quota_cores is not None:
+        cores_str = f"{math.ceil(monitor.cpu_quota_cores)} cores (quota)"
+    else:
+        cores_str = f"{len(monitor.assigned_cores)} cores"
 
     uptime = _fmt_container_uptime() if monitor.cgroup_ver else _fmt_uptime()
-    print(f"CPU:    {round(avg_cpu):3d}%  ({cores_str}, {cgroup_str}, {uptime})")
+    model_str = f" {monitor.cpu_model}," if monitor.cpu_model else ""
+    print(f"CPU:    {round(avg_cpu):3d}%  ({cores_str},{model_str} {cgroup_str}, {uptime})")
     print(f"Memory: {_fmt_bytes(mem_used)} / {_fmt_bytes(mem_limit)} ({round(mem_pct):3d}%)")
     if swap_total >= 100 * 1024:
         print(f"Swap:   {_fmt_bytes(swap_used)} / {_fmt_bytes(swap_total)} ({round(swap_pct):3d}%)")
     else:
         print("Swap:   0 Swp")
     print(f"Disk:   {_fmt_bytes(disk_used, 0)} / {_fmt_bytes(disk_total, 0)} ({round(disk_pct):3d}%)")
+    for g in _sample_gpus():
+        mem_pct_g = g.mem_used_mb / g.mem_total_mb * 100 if g.mem_total_mb else 0.0
+        print(
+            f"GPU {g.index}: {g.name}  "
+            f"util {round(g.util_pct):3d}%  "
+            f"mem {g.mem_used_mb / 1024:.1f}GB / {g.mem_total_mb / 1024:.0f}GB ({round(mem_pct_g):3d}%)"
+        )
 
 
 def main():
